@@ -24,8 +24,8 @@
       }
     </style>
     <div class="UI">
-      <h2>programmbaustelle</h2>
-      <div id="output"><i>Version 0.5</i></div>
+      <h2>der programmbaukasten.</h2>
+      <div id="output"><i>Version 0.6</i></div>
       <div>
 	<span>&gt; <input class="UI" type="text" id="input"></span><br>
 	<button id="eval-button" class="UI" type="button" onclick="run();">Eval!</button>
@@ -37,12 +37,21 @@
       "use strict";
 
       //Language features
-      const FEATURE_INFIX   = true;  //enable infix arithmetic aka numbers as pseudo-actors
+      const FEATURE_INFIX   = false;  //enable infix arithmetic aka numbers as pseudo-actors
       const FEATURE_STREAMS = true; //load the stream example from SICP chapter 3
       const FEATURE_ACCOUNT = true; //load the bank account example from SICP chapter 3
+      const FEATURE_MINIMAL_MATH = false; //implement multiplication as repeated addition etc
+                                          //at the cost of efficiency
+      
       //Editor features
-      let   DEBUG_TRACE = false; //trace (i.e. log to console) every call to eval or apply 
-                                 //and every returned value. May be toggled at run time.
+      let   DEBUG_TRACE = false; //trace (i.e. log to console) every
+                                 //call to eval or apply and every
+                                 //returned value. May be toggled at
+                                 //run time.  WARNING: Generates a lot
+                                 //of output! Test with (+ 1 2) first!
+      //misc. constants
+      let DEBUG_TRACE_LEVEL = 0;
+
 
 
       //----------------------
@@ -50,7 +59,7 @@
       //----------------------
       function clrscr () {
 	  //clears the #output area
-	  document.querySelector('#output').innerHTML = 'Keep on hacking!';
+	  document.querySelector('#output').innerHTML = '';
 	  document.querySelector('#input').focus();
       }
 
@@ -58,10 +67,11 @@
 	  //event handler, eval's text from the #input field
 	  const output = document.querySelector('#output');
 	  const input  = document.querySelector('#input');
-	  output.innerHTML += "<br>&gt; " + input.value;// + "<br>";
+	  if(output.innerHTML != "") { output.innerHTML += "<br>";}
+	  output.innerHTML += "&gt; " + escapeHtml(input.value);// + "<br>";
 	  let result = "";
 	  try {
-	      result = printExpr(readeval(input.value,GLOBAL_ENV));
+	      result = escapeHtml(printExpr(readeval(input.value,GLOBAL_ENV)));
 	  } catch(e) {
 	      result = '<span class="error">Error: ' + e + '</span>';
 	      DEBUG_TRACE_LEVEL = 0;
@@ -88,6 +98,8 @@
 		replace(/\(/g, " ( ").
 		replace(/\)/g, " ) ").
 		replace(/\'/g, " ' ").
+		replace(/\`/g, " ` ").
+		replace(/\,/g, " , ").
 		replace(/\n/g, " ").
 		replace(/\t/g, " ");
 	  return withSpaces.split(" ").filter(string=>string.length>0);
@@ -105,6 +117,14 @@
 	      } else if(token ==="'") {
 		  return {type:"cons",
 			  car: {type:"symbol", value: "quote"},
+			  cdr: {type: "cons", car:parseToken(tokens.shift()), cdr: NIL}};
+	      } else if(token ==="`") {
+		  return {type:"cons",
+			  car: {type:"symbol", value: "quasi-quote"},
+			  cdr: {type: "cons", car:parseToken(tokens.shift()), cdr: NIL}};
+	      } else if(token ===",") {
+		  return {type:"cons",
+			  car: {type:"symbol", value: "unquote"},
 			  cdr: {type: "cons", car:parseToken(tokens.shift()), cdr: NIL}};
 	      } else if  (token.match(/^-?[0-9]+$/) != null) {
 		  return {type: "number", value: parseInt(token)};
@@ -179,6 +199,7 @@
 		  cons = cons.cdr;
 	      }
 	      if(cons != NIL) {
+		  yield {type: "symbol", value: "."}
 		  yield cons;
 	      }
 	  }
@@ -209,6 +230,25 @@
 	      cons = cons.cdr;
 	  }
       }
+
+      //-------------------
+      // Set Helper methods
+      //-------------------
+
+      function setEqual(as, bs) {
+	  //Check if two javascript Set objects are equal
+	  if (as.size !== bs.size) return false;
+	  for (let a of as) if (!bs.has(a)) return false;
+	  return true;
+      }
+
+      //---------------
+      // Syntax objects
+      //---------------
+
+      //syntax objects have the form
+      //{type:"syntax",expr: <some s-expression>,
+      //scopes: <a javascript Set of scopes>}
       
       //-------------
       // Eval & Apply
@@ -219,9 +259,6 @@
 	  //the environment env. WARNING! Should only be called via
 	  //trampoline(["eval",ast,env]);
 
-	  //console.log("DEBUG: lispeval");
-	  //console.log(ast);
-	  //console.log(env);
 	  if(ast.type === "cons") {
 	      if (ast.car.value === "define") {
 		  //this takes care of McCarthy's LABEL rule, as a define'd procedure is
@@ -300,6 +337,39 @@
 		  }
 		  let result = a.value-b.value;
 		  return ["value", {type: "number", value: result}];
+	      } else if (ast.car.value === "primitive-multiply") {
+		  let a = trampoline(["eval",ast.cdr.car, env]);
+		  let b = trampoline(["eval",ast.cdr.cdr.car, env]);
+		  if (a.type != "number") {
+		      throw "Cannot multiply: " + printExpr(a);
+		  }
+		  if (b.type != "number") {
+		      throw "Cannot multiply: " + printExpr(b);
+		  }
+		  let result = a.value*b.value;
+		  return ["value", {type: "number", value: result}];
+	      } else if (ast.car.value === "primitive-quotient") {
+		  let a = trampoline(["eval",ast.cdr.car, env]);
+		  let b = trampoline(["eval",ast.cdr.cdr.car, env]);
+		  if (a.type != "number") {
+		      throw "Cannot divide: " + printExpr(a);
+		  }
+		  if (b.type != "number") {
+		      throw "Cannot divide: " + printExpr(b);
+		  }
+		  let result = Math.floor(a.value/b.value);
+		  return ["value", {type: "number", value: result}];
+	      } else if (ast.car.value === "primitive-modulo") {
+		  let a = trampoline(["eval",ast.cdr.car, env]);
+		  let b = trampoline(["eval",ast.cdr.cdr.car, env]);
+		  if (a.type != "number") {
+		      throw "Cannot divide: " + printExpr(a);
+		  }
+		  if (b.type != "number") {
+		      throw "Cannot divide: " + printExpr(b);
+		  }
+		  let result = a.value%b.value;
+		  return ["value", {type: "number", value: result}];
 	      } else if (ast.car.value === "primitive-less-than") {
 		  let x = trampoline(["eval",ast.cdr.car, env]).value;
 		  let y = trampoline(["eval",ast.cdr.cdr.car, env]).value;
@@ -355,12 +425,25 @@
 		  } else {
 		      return ["value", _F];
 		  }
-	      } else if (ast.car.value === "primitive-atom?") {
-		  if (trampoline(["eval",ast.cdr.car, env]).type === "cons") {
-		      return ["value", _F];
-		  } else {
+	      } else if (ast.car.value === "primitive-eq?") {
+		  let x = trampoline(["eval",ast.cdr.car,env]);
+		  let y = trampoline(["eval",ast.cdr.cdr.car,env]);
+		  if(eq(x,y,env)) {
 		      return ["value", _T];
+		  } else {
+		      return ["value", _F];
 		  }
+	      //TODO: remove
+	      //} else if (ast.car.value === "primitive-atom?") {
+		  //if (trampoline(["eval",ast.cdr.car, env]).type === "cons") {
+		  //    return ["value", _F];
+		  //} else {
+		  //    return ["value", _T];
+		  //}
+  	      } else if (ast.car.value === "primitive-type") {
+		  //takes care of McCarthy's atom and RNRS type predicates
+		  let val = trampoline(["eval",ast.cdr.car, env]);
+		  return ["value", {type:"symbol", value: val.type}];
 	      } else if (ast.car.value === "primitive-apply") {
 		  let fun = trampoline(["eval",ast.cdr.car,env]);
 		  let args = env.__get(ast.cdr.cdr.car.value);
@@ -416,7 +499,7 @@
 		      return ["apply",fun, args, env, "macro " + ast.car.value];
 		  }
 		  //end "macros"
-		  //assume fun to be a lambda, let apply deal with errors
+		  //assume fun to be a lambda, let apply deal with errors //TODO: Fix this comment, it's fake news.
 		  if (fun.type === "lambda") {
 
 		      let args = NIL;
@@ -445,8 +528,6 @@
 	  }
       }
       
-      let DEBUG_TRACE_LEVEL = 0;
-
       function trampoline(packedArgs) {
 	  //Trampoline calls eval and apply again and again. Both
 	  //functions either return an actual return value, or
@@ -531,6 +612,9 @@
 	  if(listwalker === NIL) { return ["value",NIL];}
 	  while(true) {
 	      if(listwalker.cdr === NIL) {
+		  //if(DEBUG_TRACE) {
+		  //    console.log(" ".repeat(DEBUG_TRACE_LEVEL) + "Tail Call: ");
+		  //}
 		  return ["eval", listwalker.car, funEnv];
 	      } else {
   		  result = trampoline(["eval",listwalker.car,funEnv]);
@@ -575,9 +659,35 @@
 	  }
       }
 
+      function eq(x,y) {
+	  if(x.type === "lambda" || x.type === "lambda") {
+	      throw "don't compare lambdas";
+	  }
+	  if(x.type === "cons") {
+	      return y.type === "cons" &&
+		  x === y;
+	  } else {
+	      return x.type === y.type && x.value === y.value;
+	  }
+      }
+
+
       //---------------
       // REPL functions
       //---------------
+      
+
+      function escapeHtml(unsafe) {
+	  return unsafe
+              .replace(/&/g, "&amp;")
+              .replace(/</g, "&lt;")
+              .replace(/>/g, "&gt;")
+              .replace(/"/g, "&quot;")
+              .replace(/'/g, "&#039;");
+	      //.toUpperCase(); //retro Lisp compatibility mode
+      }
+
+
       function readeval (expr, env) {
 	  //Convert a textual lisp program into an ast and eval it.
 	  let result = NIL;
@@ -643,18 +753,28 @@
 
       //lisp wrappers for all appropriate primitives
       readeval("(define (+ &rest) (cond ((equal? () &rest) 0) (#t (primitive-plus (car &rest) (apply + (cdr &rest))))))",GLOBAL_ENV);
-      readeval("(define (- &rest) (cond ((equal? () &rest) 0) (#t (primitive-minus (car &rest) (apply - (cdr &rest))))))",GLOBAL_ENV);//TDOD: incorrect
+      readeval("(define (- &rest) (cond ((equal? () &rest) 0) (#t (primitive-minus (car &rest) (apply + (cdr &rest))))))",GLOBAL_ENV);
       readeval("(define (< a b) (primitive-less-than a b))",GLOBAL_ENV);
       readeval("(define (cons a b) (primitive-cons a b))",GLOBAL_ENV);
       readeval("(define (car a) (primitive-car a))",GLOBAL_ENV);
       readeval("(define (cdr a) (primitive-cdr a))",GLOBAL_ENV);
-      readeval("(define (atom? a) (primitive-atom? a))",GLOBAL_ENV);
+      readeval("(define (type a) (primitive-type a))",GLOBAL_ENV);
       readeval("(define (apply fun args) (primitive-apply fun args))",GLOBAL_ENV);
       readeval("(define (equal? a b) (primitive-equal? a b))",GLOBAL_ENV);
+      readeval("(define (eq? a b) (primitive-eq? a b))",GLOBAL_ENV);
       readeval("(define (set-car! a b) (primitive-set-car! a b))",GLOBAL_ENV);
       readeval("(define (set-cdr! a b) (primitive-set-cdr! a b))",GLOBAL_ENV);
       readeval("(define (eval e) (primitive-eval e))",GLOBAL_ENV);
       //additional primitives are define, set!, quote, cond, lambda, macro, error
+      //see "misc. arithmetic functions" for even more primitives
+
+      //type predicates
+      readeval("(define (atom? a) (not (equal? (type a) 'cons)))",GLOBAL_ENV);
+      readeval("(define (boolean? a) (or (equal? a #f) (equal a #t)))",GLOBAL_ENV);
+      readeval("(define (pair? a) (equal? (type a) 'cons))",GLOBAL_ENV);
+      readeval("(define (symbol? a) (equal? (type a) 'symbol))",GLOBAL_ENV);
+      readeval("(define (number? a) (equal? (type a) 'number))",GLOBAL_ENV);
+      readeval("(define (procedure? a) (equal? (type a) 'lambda))",GLOBAL_ENV);
 
       //some macros and essential definitions
       readeval("(define if (macro (i t e) (cond (i t) (#t e))))",GLOBAL_ENV);
@@ -687,16 +807,23 @@
       readeval("(define (> x y) (< y x))",GLOBAL_ENV);
       readeval("(define (>= x y) (or (> x y) (equal? x y)))",GLOBAL_ENV);
       readeval("(define (<= x y) (or (< x y) (equal? x y)))",GLOBAL_ENV);
-      readeval("(define (* x y) (cond ((equal? y 0) 0) ((< y 1) (* (- 0 x) (- 0 y))) (#t (+ x (* x (- y 1))))))",GLOBAL_ENV);
-      readeval("(define (mod x y) (cond ((equal? x y) 0) ((< x y) x) (#t (mod (- x y) y))))",GLOBAL_ENV);
-      readeval("(define remainder mod)",GLOBAL_ENV); //TODO: Which name should I keep? or modulo? What about div vs quotient?
-      readeval("(define (div x y) (define (divhelp x y acc) (cond ((equal? y 0) (error div -- Division by zero)) ((< y 0) (error div -- Only positive values for y are supported)) ((< x y)  acc) " +
-	       "((>= x y) (divhelp (- x y) y (+ acc 1))))) (divhelp x y 0))",GLOBAL_ENV);
-      readeval("(define (even? x) (= (mod x 2) 0))",GLOBAL_ENV);
-      readeval("(define (odd?  x) (= (mod x 2) 1))",GLOBAL_ENV);
+      if(FEATURE_MINIMAL_MATH === true){
+	  readeval("(define (* x y) (cond ((equal? y 0) 0) ((< y 1) (* (- 0 x) (- 0 y))) (#t (+ x (* x (- y 1))))))",GLOBAL_ENV);
+	  readeval("(define (modulo x y) (cond ((equal? x y) 0) ((< x y) x) (#t (modulo (- x y) y))))",GLOBAL_ENV);
+	  readeval("(define remainder modulo)",GLOBAL_ENV); //TODO: implement sign differences
+	  readeval("(define (quotient x y) (define (divhelp x y acc) (cond ((equal? y 0) (error quotient -- Division by zero)) ((< y 0) (error quotient -- Only positive values for y are supported)) ((< x y)  acc) " +
+		   "((>= x y) (divhelp (- x y) y (+ acc 1))))) (divhelp x y 0))",GLOBAL_ENV);
+      } else {
+	  readeval("(define (* x y) (primitive-multiply x y))",GLOBAL_ENV);
+	  readeval("(define (modulo x y) (primitive-modulo x y))",GLOBAL_ENV);
+	  readeval("(define remainder modulo)",GLOBAL_ENV); //TODO: implement sign differences
+	  readeval("(define (quotient x y) (primitive-quotient x y))",GLOBAL_ENV);
+      }	  
+      readeval("(define (even? x) (= (modulo x 2) 0))",GLOBAL_ENV);
+      readeval("(define (odd?  x) (= (modulo x 2) 1))",GLOBAL_ENV);
       readeval("(define (abs x) (cond ((< x 0) (- 0 x)) (#t x)))",GLOBAL_ENV);
       readeval("(define (gcd a b) (if (= b 0) a (gcd b (remainder a b))))",GLOBAL_ENV);
-      readeval("(define (lcm a b) (* (abs a) (div (abs b) (gcd a b))))",GLOBAL_ENV);
+      readeval("(define (lcm a b) (* (abs a) (quotient (abs b) (gcd a b))))",GLOBAL_ENV);
 
 
 
@@ -714,7 +841,9 @@
       readeval("(define (assoc obj alist) (cond ((equal? alist ()) ()) ((equal? obj (car (car alist))) (car alist)) (#t (assoc obj (cdr alist)))))",GLOBAL_ENV);
       readeval("(define (append-2 l1 l2) (cond ((null? l1) l2) (#t (cons (car l1) (append-2 (cdr l1) l2)))))", GLOBAL_ENV);
       readeval("(define (append &rest) (cond ((null? &rest) ()) (#t (append-2 (car &rest) (apply append (cdr &rest))))))", GLOBAL_ENV);
-      readeval("(define (reverse xs) (define (revappend xs ys) (cond ((null? xs) ys) (#t (revappend (cdr xs) (cons (car xs) ys))))) (revappend xs ()))", GLOBAL_ENV);
+      readeval("(define (reverse xs) (define (revappend xs ys) (cond ((null? xs) ys) (#t (revappend (cdr xs) (cons (car xs) ys))))) (revappend xs ()))", GLOBAL_ENV);//Thank you, Guy Steele!
+      readeval("(define (member obj l) (cond ((equal? l ()) #f)  (#t (if (equal? (car l) obj) #t (member obj (cdr l))))))", GLOBAL_ENV);
+      
 
       //misc. functions
 
@@ -734,7 +863,7 @@
 	  readeval("(define (stream-enumerate-interval low high) (if (> low high) the-empty-stream (cons-stream low (stream-enumerate-interval (+ low 1) high))))",GLOBAL_ENV);
 	  readeval("(define (stream-filter pred stream) (cond ((stream-null? stream) the-empty-stream) ((pred (stream-car stream)) (cons-stream (stream-car stream)"+
 		   "(stream-filter pred (stream-cdr stream)))) (#t (stream-filter pred (stream-cdr stream)))))",GLOBAL_ENV); //replaced else with #t, //TODO: add else to cond
-	  //TODO: Why does this example fail? (stream-car (stream-cdr (stream-filter even? (stream-enumerate-interval 10000 1000000)))) // ANSWER: Because of the recursion in mod -.-
+	  //TODO: Why does this example fail? (stream-car (stream-cdr (stream-filter even? (stream-enumerate-interval 10000 1000000)))) // ANSWER: Because of the recursion in modulo -.-
 	  //skipped memo-proc, need to implement set!
 	  //skipped stuff
 	  readeval("(define (integers-starting-from n) (cons-stream n (integers-starting-from (+ n 1))))",GLOBAL_ENV);
@@ -775,7 +904,8 @@
 	  } else if(equal(testresult,expectedresult)) {
 	      message = "OK // " + expr + " => " +  printExpr(testresult);
 	  } else {
-	      message = "!! //expected: " + printExpr(expectedresult)  + " found: " +  printExpr(testresult);
+	      message = "!! //expected: " + printExpr(expectedresult)  +
+		  " found: " +  printExpr(testresult) + " in expression: " + expr;
 	  }
 	  console.log(message);
       }
@@ -799,9 +929,14 @@
 	  readeval("(define (sum x) (if (equal? x 0) 0 (+ x (sum (- x 1)))))",GLOBAL_ENV); //recursion
 	  _test("(sum 15)", "120");
 	  _test("(* 100 100)", "10000"); //using predefined scheme functions
-	  _test("(div 250 25)", "10");
+	  _test("(quotient 250 25)", "10");
 	  readeval("(define (fib n) (cond ((< n 2) n) (#t (+ (fib (- n 1)) (fib (- n 2))))))",GLOBAL_ENV); //recursive fibonacci:
 	  _test("(fib 7)","13");
+	  _test("(procedure? fib)","#t");
+	  _test("(atom? fib)","#t");
+	  _test("(number? (fib 3))","#t");
+	  _test("(symbol? 'fib)","#t");
+	  _test("(atom? '(fib))","#f");
 	  _test("(equal? (quote (a b c)) (quote (a b c)))","#t");
 	  _test("(equal? (quote (a b c)) (quote (a b)))","#f");
 	  _test("(equal? (map fib (quote (1 2 3))) (quote (1 1 2)))","#t");//yay, quote works
@@ -809,21 +944,26 @@
 	  _test("(((lambda (!) (lambda (n) ((! !) n))) (lambda (!) (lambda (n) (cond ((equal? n 0) 1) (#t (* n ((! !) (- n 1)))))))) 5)","120");
 	  _test("(map atom? (quote (1 (2 3) hi (bye))))","(list #t #f #t #f)");
 	  _test("(reduce + (list 1 2 3 4 5) 0)","15");
-	  _test("(if #t 1 (div 1 0))","1"); //this would produce an error without macros
+	  _test("(if #t 1 (quotient 1 0))","1"); //this would produce an error without macros
 	  _test("(stream-ref no-sevens 100)","117");
 	  _test("(((make-account 100) 'withdraw) 50)","50");
 	  _test("((lambda () (define x (cons 1 ())) (set-cdr! x x) (take 20 x)))","'(1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1)"); //test set-cdr and circular list structures
-	  readeval("(define (fib n) (define a 0) (define b 1) (while (n > 0) (define help b) (set! b (a + b)) (set! a help) (set! n (n - 1))) a)",GLOBAL_ENV);
-	  _test("(map fib '(0 1 2 3 4 5 6 7 8 9))","'(0 1 1 2 3 5 8 13 21 34)"); //imperative fibonnaci, relies on infix feature
-
+	  if(FEATURE_INFIX === true) {
+	      readeval("(define (fib n) (define a 0) (define b 1) (while (n > 0) (define help b) (set! b (a + b)) (set! a help) (set! n (n - 1))) a)",GLOBAL_ENV);
+	      _test("(map fib '(0 1 2 3 4 5 6 7 8 9))","'(0 1 1 2 3 5 8 13 21 34)"); //imperative fibonnaci, relies on infix feature
+	  } else {
+	      console.log("   // skipped FEATURE_INFIX tests");
+	  }
+	  
 
 	  //-----------------------------
 	  //Longer-running tests below!!!
 	  //-----------------------------
+	  //(only a problem with FEATURE_MINIMAL_MATH === true)
 	  _test("(stream-ref primes 50)","233");
 	  //test tail recursion
 	  _test("(stream-car (stream-cdr (stream-filter even? (stream-enumerate-interval 10000 1000000))))","10002");
-	  _test("(div 100000 2)","50000");
+	  _test("(quotient 100000 2)","50000");
       }
 
     </script>
@@ -852,6 +992,10 @@ Changelog:
   - [!] New primitives: set-car!, set-cdr!, eval
   - New functions: drop, take, begin, various list functions
   - UI improvements: Focus input text field on page load, eval code when Enter is pressed
+- v0.6:
+  - New primitives: primitive-{multiply,quotient,modulo}. The old implementation is available via FEATURE_MINIMAL_MATH
+  - Read syntax (without proper behavior!) for quasi-quote(`) and unquote(,).
+  - New primitive primitive-type, new functions: type predicates, removed: primitive-atom
 
 TODO:
 Bugs / Missing features:
@@ -863,6 +1007,8 @@ Bugs / Missing features:
 - [X] printExpr doesn't handle lambda yet (fixed to remove () around body)
 - [X] function application mutates a lambda's environment permanently
 - [?] improve UI
+  - [ ] load files
+  - [ ] move scheme code to external .scm file
 - [X] use cons instead of array
 - [X] Tail Call Elimination (BAM, done!!!)
   - [X] => implement queue of unevaluated lisp expressions, turn js-recursion into loop (DONE, implemented trampolining intead)
@@ -871,12 +1017,16 @@ Bugs / Missing features:
 - [X] begin
 - [ ] let
 - [ ] else in cond
+- [X] eq?, primitive division/multiplication
+- [ ] add strings
+  - [ ] refactor parser to consume each character separately. should work without lookahead
+- [ ] add vectors. javascript arrays and a few primitives.
 
 Bonus-features
 - [X] (list ...), 
 - [X] print conses as lists
 - [X] 'quote
-- unquote, splicing
+- quasi-quote, unquote, splicing
 - [X] Numbers as functions?
 - js-eval?
 - Strings?
@@ -889,6 +1039,10 @@ Bonus-features
 - change macros to memoize? or let the user explicitly eval parameters 
   (the latter choice would remove the macro-specific env.__get() code )
   (what do real FEXPRs do?)
+  (or: kill the current macro system, implement syntax-rules)
+- change environments to proper hash tables (or alists and make them accessible in scheme)
+- define proper object types for each lisp data type
+- define equal? in terms of eq?
 
 /////////////////////////////////////////////////////
 // What's still missing for an R5RS-compliant Scheme?
@@ -926,7 +1080,7 @@ probably relatively easy:
 
 probably difficult:
 - [X] quote syntax
-- quasiquote
+- quasiquote, unquote
 - dotted pairs
 - syntax-rules, define-syntax, let-syntax
 - (call/cc)
