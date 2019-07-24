@@ -18,6 +18,10 @@
     <script>
       "use strict";
 
+      const FEATURE_INFIX = false;//true;
+      const FEATURE_STREAMS = true;
+      const FEATURE_ACCOUNT = true;
+
       //----------------------
       // Button event handlers
       //----------------------
@@ -45,23 +49,30 @@
       // Parsing related stuff
       //------------------------------
       function tokenize(inputString){
-	  //insert spaces before and after parentheses, then split at spaces
-	  //to get a flat array of tokens
+	  //Insert spaces before and after parentheses, then split at
+	  //spaces to get a flat array of tokens
 	  const withSpaces = inputString.
 		replace(/\(/g, " ( ").
 		replace(/\)/g, " ) ").
+		replace(/\'/g, " ' ").
 		replace(/\n/g, " ").
 		replace(/\t/g, " ");
 	  return withSpaces.split(" ").filter(string=>string.length>0);
       }
 
       function parseAST(tokens) {
-	  //transform the flat array from tokenize() into a hierarchical AST
+	  //Transform the flat array from tokenize() into a
+	  //hierarchical AST
 	  function parseToken(token) {
+	      //Parse an individual token.
 	      if(token===undefined) {
 		  throw "Empty input";
 	      } else if(token === "(") {
 		  return parseList();
+	      } else if(token ==="'") {
+		  return {type:"cons",
+			  car: {type:"symbol", value: "quote"},
+			  cdr: {type: "cons", car:parseToken(tokens.shift()), cdr: NIL}};
 	      } else if  (token.match(/^-?[0-9]+$/) != null) {
 		  return {type: "number", value: parseInt(token)};
 	      } else if (token.match(/^[a-zA-Z0-9\+\-\*\#\?\<\>\!\&\=]+$/) != null) {
@@ -72,6 +83,10 @@
 	  }
 	
 	  function parseList() {
+	      //Read tokens until the end of a list and return them as
+	      //an array.  With the recursive calls and the global
+	      //token stream this is enough to parse nested list
+	      //structures
 	      let list = NIL;
 	      while(true) {
 		  token = tokens.shift();
@@ -99,6 +114,7 @@
       // Cons helper functions
       //----------------------
       function append(list, element) {
+	  //Appends a given element to a cons-list
 	  let help = list;
 	  if(list === NIL) {
 	      return {type: "cons", car: element, cdr: NIL};
@@ -116,6 +132,8 @@
       }
 
       function* generateCons(cons) {
+	  //Yields each element of a cons-list. Improper lists are
+	  //supported by a hack.
 	  if(cons === NIL) {
 	      return cons;
 	  } else if (cons.type != "cons") {
@@ -132,6 +150,7 @@
       }
 
       function lengthCons(cons) {
+	  //Returns the length of a cons-list.
 	  let n = 0;
 	  while(true) {
 	      if(cons === NIL) {
@@ -146,7 +165,7 @@
       }
 
       function nthCons(cons, n) {
-	  //gets the nth value from a list, starting with element 0.
+	  //Gets the nth value from a list, starting with element 0.
 	  while(true) {
 	      if(n <= 0) {
 		  return cons.car;
@@ -161,7 +180,9 @@
       //-------------
 
       function lispeval (ast,env) {
-	  //evaluatest the expression ast (as computed by parseAST) in the environment env
+	  //Evaluatest the expression ast (as computed by parseAST) in
+	  //the environment env. WARNING! Should only be called via
+	  //trampoline(["eval",ast,env]);
 
 	  //console.log("DEBUG: lispeval");
 	  //console.log(ast);
@@ -171,7 +192,7 @@
 		  //this takes care of McCarthy's LABEL rule, as a define'd procedure is
 		  //executed in an environment where it's already bound. Much more SICP style.
 		  if (ast.cdr.car.type === "symbol") {
-		      env[ast.cdr.car.value] = lispeval(ast.cdr.cdr.car,env);
+		      env[ast.cdr.car.value] = trampoline(["eval",ast.cdr.cdr.car,env]);
 		  } else if (ast.cdr.car.type === "cons") {
 		      let spec = ast.cdr.car;
 		      let body = ast.cdr.cdr;
@@ -179,10 +200,32 @@
 		  } else {
 		      throw "Define expected a symbol or a cons (i.e. function spec), found " + printExpr(ast.cdr.car);
 		  }
-		  return env.__get(ast.cdr.car.value);
+		  return ["value",env.__get(ast.cdr.car.value)];
+	      } else if (ast.car.value === "set!") {
+		  //this takes care of McCarthy's LABEL rule, as a define'd procedure is
+		  //executed in an environment where it's already bound. Much more SICP style.
+		  if (ast.cdr.car.type === "symbol") {
+		      let targetEnv = env;
+		      let found = false;
+		      while (targetEnv != null) {
+			  if(targetEnv.__get(ast.cdr.car.value,false) != undefined) {
+			      found = true;
+			      targetEnv[ast.cdr.car.value] = trampoline(["eval",ast.cdr.cdr.car,env]);
+			      return ["value",env.__get(ast.cdr.car.value)];
+			  } else {
+			      targetEnv = targetEnv.__parent;
+			  }
+		      }
+		      //not found
+		      throw "Unknown identifier: " + ast.cdr.car.value;
+		      //permissive variant: env[ast.cdr.car.value] = trampoline(["eval",ast.cdr.cdr.car,env]);
+		  } else {
+		      throw "Set! expected a symbol, found " + printExpr(ast.cdr.car);
+		  }
+		  return ["value",env.__get(ast.cdr.car.value)];
 	      } else if (ast.car.value === "primitive-plus") {
-		  let a = lispeval(ast.cdr.car, env);
-		  let b = lispeval(ast.cdr.cdr.car, env);
+		  let a = trampoline(["eval",ast.cdr.car, env]);
+		  let b = trampoline(["eval",ast.cdr.cdr.car, env]);
 		  if (a.type != "number") {
 		      throw "Cannot add: " + printExpr(a);
 		  }
@@ -190,10 +233,10 @@
 		      throw "Cannot add: " + printExpr(b);
 		  }
 		  let result = a.value+b.value;
-		  return {type: "number", value: result};
+		  return ["value", {type: "number", value: result}];
 	      } else if (ast.car.value === "primitive-minus") {
-		  let a = lispeval(ast.cdr.car, env);
-		  let b = lispeval(ast.cdr.cdr.car, env);
+		  let a = trampoline(["eval",ast.cdr.car, env]);
+		  let b = trampoline(["eval",ast.cdr.cdr.car, env]);
 		  if (a.type != "number") {
 		      throw "Cannot subtract: " + printExpr(a);
 		  }
@@ -201,109 +244,113 @@
 		      throw "Cannot subtract: " + printExpr(b);
 		  }
 		  let result = a.value-b.value;
-		  return {type: "number", value: result};
+		  return ["value", {type: "number", value: result}];
 	      } else if (ast.car.value === "primitive-less-than") {
-		  let x = lispeval(ast.cdr.car, env).value;
-		  let y = lispeval(ast.cdr.cdr.car, env).value;
+		  let x = trampoline(["eval",ast.cdr.car, env]).value;
+		  let y = trampoline(["eval",ast.cdr.cdr.car, env]).value;
 		  if (x != undefined && y != undefined) {
 		      if(x < y) {
-			  return(_T);
+			  return ["value", _T];
 		      } else {
-			  return(_F);
+			  return ["value", _F];
 		      }
 		  } else {
 		      throw "Cannot compare " + x + " and " + y;
 		  }
 	      } else if (ast.car.value === "quote") {
-		  //TODO: add a warning if ast.cdr.cdr is non-empty
 		  if(ast.cdr.cdr != NIL) {
-		      throw "Quote expects a single argument. Maybe use a list?";
+		      throw "Quote expects a single argument. Maybe use a list, e.g. (quote (a b c))?";
 		  }
-		  return ast.cdr.car;
+		  return ["value", ast.cdr.car];
 	      } else if (ast.car.value === "primitive-car") {
-		  let obj = lispeval(ast.cdr.car, env);
+		  let obj = trampoline(["eval",ast.cdr.car, env]);
 		  if (obj === undefined) {
 		      throw "Undefined object: " + printExpr(ast.cdr.car);
 		  }
 		  if(obj.type === "cons") {
-		      return obj.car;
+		      return ["value", obj.car];
 		  } else {
 		      throw "Car expected a cons cell, found " + printExpr(obj);
 		  }
 	      } else if (ast.car.value === "primitive-cdr") {
-		  let obj = lispeval(ast.cdr.car, env);
+		  let obj = trampoline(["eval",ast.cdr.car, env]);
 		  if (obj === undefined) {
 		      throw "Undefined object: " + printExpr(ast.cdr.car);
 		  }
 		  if(obj.type === "cons") {
-		      return obj.cdr;
+		      return ["value", obj.cdr];
 		  } else {
 		      throw "Cdr expected a cons cell, found " + obj;
 		  }
 	      } else if (ast.car.value === "primitive-cons") {
-		  return {type: "cons", car: lispeval(ast.cdr.car,env), cdr: lispeval(ast.cdr.cdr.car,env)};
+		  return ["value", {type: "cons", car: trampoline(["eval",ast.cdr.car,env]), cdr: trampoline(["eval",ast.cdr.cdr.car,env])}];
 	      } else if (ast.car.value === "primitive-equal?") {
-		  let x = lispeval(ast.cdr.car,env);
-		  let y = lispeval(ast.cdr.cdr.car,env);
+		  let x = trampoline(["eval",ast.cdr.car,env]);
+		  let y = trampoline(["eval",ast.cdr.cdr.car,env]);
 		  if(equal(x,y,env)) {
-		      return _T;
+		      return ["value", _T];
 		  } else {
-		      return _F;
+		      return ["value", _F];
 		  }
 	      } else if (ast.car.value === "primitive-atom?") {
-		  if (lispeval(ast.cdr.car, env).type === "cons") {
-		      return _F;
+		  if (trampoline(["eval",ast.cdr.car, env]).type === "cons") {
+		      return ["value", _F];
 		  } else {
-		      return _T;
+		      return ["value", _T];
 		  }
 	      } else if (ast.car.value === "primitive-apply") {
-		  let fun = lispeval(ast.cdr.car,env);
+		  let fun = trampoline(["eval",ast.cdr.car,env]);
 		  let args = env.__get(ast.cdr.cdr.car.value);
-		  return lispapply(fun,args,env, ast.cdr.cdr.car.value);
+		  return ["apply",fun,args,env, ast.cdr.cdr.car.value];
 	      } else if (ast.car.value === "cond") {
 		  for(let clause of generateCons(ast.cdr)) {
-		      let condition = lispeval(clause.car, env);
+		      let condition = trampoline(["eval",clause.car, env]);
 		      if(condition.value != "#f") {
-			  return lispeval(clause.cdr.car,env);
+			  return ["eval",clause.cdr.car,env];
 			  break;
 		      }
 		  }
-		  return NIL;
+		  return ["value", NIL];
 	      } else if (ast.car.value === "lambda") {
-		  return {type: "lambda", args: ast.cdr.car, env: makeEnv(env), body: ast.cdr.cdr};
+		  return ["value", {type: "lambda", args: ast.cdr.car, env: makeEnv(env), body: ast.cdr.cdr}];
 	      } else if (ast.car.value === "macro") {
-		  return {type: "macro",  args: ast.cdr.car, env: makeEnv(env), body: ast.cdr.cdr};
+		  return ["value", {type: "macro",  args: ast.cdr.car, env: makeEnv(env), body: ast.cdr.cdr}];
 	      } else if (ast.car.value === "error") {
 		  throw printExpr(ast.cdr);
 	      } else {
+		  //--------------------
 		  //Function application
-		  let fun = lispeval(ast.car, env);
+		  //--------------------
+		  let fun = trampoline(["eval",ast.car, env]);
 		  if(fun === undefined) {
 		      throw "unknown function: " + ast.car.value;
 		  }
 		  //console.log("DEBUG: eval(function)");
 		  //console.log(fun);
 
-		  //new feature "infix": numbers act as actors that consume messages, making infix arithmetic possible
-		  if(fun.type === "number") {
+		  //The following code allows for numbers as functions.
+		  //Functions apply their first arg to (cons <themself> <& following args>).
+		  //Thus, (fully parenthesized) infix arithmetic can be used. This is inspired by The history of Lisp [??] section ?? //TODO: add source
+		  //This feature can be turned off by setting FEATURE_INFIX to false.
+		  if(FEATURE_INFIX && fun.type === "number") {
 		      let args = NIL;
-		      let newfun = lispeval(ast.cdr.car, env);
+		      let newfun = trampoline(["eval",ast.cdr.car, env]);
 		      if(newfun.type != "lambda" && newfun.type != "macro") {
 			  throw "Numbers cannot receive messages of type: " + newfun.type;
 		      }
 		      for (let arg of generateCons(ast.cdr.cdr)) {
-			  args = append(args,lispeval(arg,env));
+			  args = append(args,trampoline(["eval",arg,env]));
 		      }
-		      return lispapply(newfun,{type: "cons", car: fun, cdr: args}, env, "Actor message " + printExpr(newfun));
+		      return ["apply",newfun,{type: "cons", car: fun, cdr: args}, env, "Actor message " + printExpr(newfun)];
 		  }
-		  //end "infix"
+
 		  //new feature "macros"
 		  if (fun.type === "macro") {
 		      let args = NIL;
 		      for (let arg of generateCons(ast.cdr)) {
 			  args = append(args,arg); //<-- difference #1
 		      }
-		      return lispapply(fun, args, env, "macro " + ast.car.value)
+		      return ["apply",fun, args, env, "macro " + ast.car.value];
 		  }
 		  //end "macros"
 		  //assume fun to be a lambda, let apply deal with errors
@@ -311,53 +358,88 @@
 
 		      let args = NIL;
 		      for (let arg of generateCons(ast.cdr)) {
-			  args = append(args,lispeval(arg,env));
+			  args = append(args,trampoline(["eval",arg,env]));
 		      }
-		      return lispapply(fun, args, env, ast.car.value);
+		      return ["apply",fun, args, env, ast.car.value];
 		  }
 		  throw "Cannot apply type " + fun.type
 	      }
 	  } else {
-	      //the expression is an atom
+	      //-------------------------
+	      //The expression is an atom
+	      //-------------------------
 	      if (ast.type === "number") {
-		  return ast;
+		  return ["value", ast];
 	      } else if (ast.type === "symbol") {
 		  let astValue = env.__get(ast.value);
 		  if (astValue === undefined) {
 		      throw "Unknown symbol: " + printExpr(ast);
 		  }
-		  return astValue;
+		  return ["value", astValue];
 	      } else {
 		  throw "Illegal type: " + ast;
 	      }
 	  }
       }
 
-      function lispapply(fun,args, env, name) {
+      function trampoline(packedArgs) {
+	  //Trampoline calls eval and apply again and again. Both
+	  //functions either return an actual return value, or
+	  //information that tells trampoline which function needs to
+	  //be called next. This turns tail recursion into iteration.
+	  
+	  while(true) {
+	      if(packedArgs[0] === "value") {
+		  return packedArgs[1];
+	      } else if (packedArgs[0] === "eval") {
+		  packedArgs = lispeval(packedArgs[1],packedArgs[2]);
+	      } else if (packedArgs[0] === "apply") {
+		  packedArgs = lispapply(packedArgs[1],packedArgs[2],packedArgs[3],packedArgs[4]);
+	      } else {
+		  throw "illegal return value " + packedArgs +" // "+ printExpr(packedArgs);
+	      }
+	  }
+      }
+
+      function lispapply(fun,args,env,name) {
+	  //Applies the function fun to the arguments in args in the
+	  //environment env. A function name can be supplied for
+	  //better error messages.
+
+	  //Check numer of arguments. Ignore this, if a &rest argument is used
 	  if(lengthCons(args) != lengthCons(fun.args) && nthCons(fun.args, lengthCons(fun.args)-1).value != "&rest") {
 	      throw "Wrong number of arguments in "+ name +
 		  ". expected " + lengthCons(fun.args) + " got " + lengthCons(args);
 	  }
+
+	  //Make a new environment for the function.
 	  let funEnv = makeEnv(fun.env);
 
-	  //new feature "macros"
+	  //The magic code that makes macros evaluate their arguments
+	  //on read.
 	  if(fun.type === "macro") {
-	      funEnv["__get"] = function(val) { //<-- difference #2
+	      funEnv["__get"] = function(val,checkparent = true) { //<-- difference #2
 		  if(funEnv[val] != undefined) {
-		      return lispeval(funEnv[val],env);
-		  } else if (funEnv["__parent"]) {
+		      return trampoline(["eval",funEnv[val],env]);
+		  } else if (funEnv["__parent"] && checkparent) {
 		      return funEnv["__parent"].__get(val);
 		  } else {
-		      "Apply: Undefined value: " + val;
+		      //throw "Apply: Undefined value: " + val;
 		  }
 	      }
 	  }
-	  //end "macros
 	  
+	  //Put the arguments in the new environment. The arguments
+	  //have already been evaluated in eval (or not, in the case
+	  //of a macro).
 	  let argshelper = fun.args;
 	  while(argshelper != NIL) {
 	      if(argshelper.car.type === "symbol" && argshelper.car.value === "&rest") {
-		  funEnv[argshelper.car.value] = args;
+		  if(fun.type === "macro") {
+		      funEnv[argshelper.car.value] = {type:"cons", car: {type:"symbol",value:"list"}, cdr: args};
+		  } else {
+		      funEnv[argshelper.car.value] = args;
+		  }
 		  break;
 	      }
 	      funEnv[argshelper.car.value] = args.car;
@@ -365,25 +447,40 @@
 	      argshelper = argshelper.cdr;
 	  }
 	  let result = NIL;
-	  for(let expr of generateCons(fun.body)){
-	      result = lispeval(expr,funEnv);
-	  }
-	  return result;
-	  
+
+	  //Execute each instruction in the functions body. Return
+	  //before executing the last instruction to enable tail
+	  //recursion via trampoline.
+	  let listwalker = fun.body;
+	  if(listwalker === NIL) { return ["value",NIL];}
+	  while(true) {
+	      if(listwalker.cdr === NIL) {
+		  return ["eval", listwalker.car, funEnv];
+	      } else {
+  		  result = trampoline(["eval",listwalker.car,funEnv]);
+		  listwalker = listwalker.cdr;
+	      }
+	  }	  
       }
 
       //----------------------------------
       // Helper functions for eval & apply
       //----------------------------------
       function makeEnv (parent) {
+	  //Create a new environment which will later contain bindings
+	  //(variable->value). Get a value from the environment env by
+	  //calling env.get(variable). If a value is not found, the
+	  //parent environments are checked recursively. WARNING:
+	  //Macros hack this implementation in lispapply.
+	  
 	  let env = {__parent: parent};
-	  env["__get"] = function(val) {
+	  env["__get"] = function(val, checkparent=true) {
 	      if(env[val] != undefined) {
 		  return env[val];
-	      } else if (env["__parent"]) {
+	      } else if (env["__parent"] && checkparent) {
 		  return env["__parent"].__get(val);
 	      } else {
-		  "MakeEnv: Undefined value: " + val;
+		  //throw "MakeEnv: Undefined value: " + val;
 	      }
 	  }
 	  return env;
@@ -406,13 +503,14 @@
       // REPL functions
       //---------------
       function readeval (expr, env) {
-	  //convert a textual lisp program to an ast and eval it
-	  let result =  lispeval(parseAST(tokenize(expr),[]),env);
+	  //Convert a textual lisp program into an ast and eval it.
+	  let result =  trampoline(["eval",parseAST(tokenize(expr),[]),env]);
 	  return result;
       }
 
       function printExpr(expr) {
-	  //prints a lisp expression in human readable form
+	  //Prints (i.e. returns as a string) a lisp expression in
+	  //human readable form.
 	  if(expr === undefined) {
 	      return "&lt;no value&gt;";
 	  }
@@ -439,10 +537,14 @@
       // Global Environment & Constants
       //-------------------------------
       let globalEnv = makeEnv(null);
+      //These constants should never be changed. But if you want to
+      //(define #f #t), feel free to try it...
       globalEnv["#t"] = {type: "symbol", value: "#t"};
       globalEnv["#f"] = {type: "symbol", value: "#f"};
       globalEnv["()"] = {type: "symbol", value: "()"};
-      globalEnv["quote"] = {type: "symbol", value: "quote"};
+      globalEnv["lambda"] = {type: "symbol", value: "lambda"};
+      //globalEnv["quote"] = {type: "symbol", value: "quote"};//probably unneccessary
+      //Constants to make the javascript code less ugly
       const _T = globalEnv.__get("#t");
       const _F = globalEnv.__get("#f");
       const NIL = globalEnv.__get("()");
@@ -450,7 +552,10 @@
       //---------------------
       // Predefined functions
       //---------------------
-      //template for c&p: readeval("(define )",globalEnv);
+      //The basic interpreter is ready to run now.
+      //Time to bootstrap a usable environment.
+      //template for copy&paste: readeval("(define )",globalEnv);
+
       //lisp wrappers for all appropriate primitives
       readeval("(define (+ &rest) (cond ((equal? () &rest) 0) (#t (primitive-plus (car &rest) (apply + (cdr &rest))))))",globalEnv);
       readeval("(define (- &rest) (cond ((equal? () &rest) 0) (#t (primitive-minus (car &rest) (apply - (cdr &rest))))))",globalEnv);
@@ -466,8 +571,7 @@
       readeval("(define if (macro (i t e) (cond (i t) (#t e))))",globalEnv);
       readeval("(define and (macro (p q) (cond (p q) (#t #f))))",globalEnv);
       readeval("(define or (macro (p q) (cond (p p) (#t q))))",globalEnv);
-      
-
+      readeval("(define (begin &rest) (if (null? &rest) () (if (null? (cdr &rest)) (car &rest) (apply begin (cdr &rest)))))",globalEnv);//depends on the arguments being evaluated in order
       
       //misc. functions
       readeval("(define = equal?)",globalEnv);
@@ -476,7 +580,7 @@
       readeval("(define (<= x y) (or (< x y) (equal? x y)))",globalEnv);
       readeval("(define (* x y) (cond ((equal? y 0) 0) ((< y 1) (* (- 0 x) (- 0 y))) (#t (+ x (* x (- y 1))))))",globalEnv);
       readeval("(define (mod x y) (cond ((equal? x y) 0) ((< x y) x) (#t (mod (- x y) y))))",globalEnv);
-      readeval("(define remainder mod)",globalEnv); //TODO: Which name should I keep?
+      readeval("(define remainder mod)",globalEnv); //TODO: Which name should I keep? or modulo? What about div vs quotient?
       readeval("(define (div x y) (define (divhelp x y acc) (cond ((equal? y 0) (error div -- Division by zero)) ((< y 0) (error div -- Only positive values for y are supported)) ((< x y)  acc) " +
 	       "((>= x y) (divhelp (- x y) y (+ acc 1))))) (divhelp x y 0))",globalEnv);
       readeval("(define (list &rest) &rest)",globalEnv);
@@ -486,54 +590,77 @@
       readeval("(define (even? x) (= (mod x 2) 0)))",globalEnv);
       readeval("(define (not x) (if (= x #f) #t #f))",globalEnv);
 
+      if(FEATURE_STREAMS) {
+	  //Streams and delayed evaluationfrom SICP chapter 3. This
+	  //feature can be turned off by setting FEATURE_STREAMS to
+	  //false. WARNING: This contains some commonly used scheme
+	  //functions/macros, like delay.
+	  readeval("(define delay (macro (exp) (lambda () exp)))",globalEnv);
+	  readeval("(define cons-stream (macro (a b) (cons a (delay b))))",globalEnv);
+	  readeval("(define (force delayed-object) (delayed-object))",globalEnv);
+	  readeval("(define (stream-car stream) (car stream))",globalEnv);
+	  readeval("(define (stream-cdr stream) (force (cdr stream)))",globalEnv);
+	  readeval("(define the-empty-stream ())",globalEnv);
+	  readeval("(define stream-null? null?)",globalEnv);
+	  readeval("(define (stream-ref s n) (if (= n 0) (stream-car s) (stream-ref (stream-cdr s) (- n 1))))",globalEnv);
+	  readeval("(define (stream-map proc s) (if (stream-null? s) the-empty-stream (cons-stream (proc (stream-car s)) (stream-map proc (stream-cdr s)))))",globalEnv);
+	  readeval("(define (stream-for-each proc s)  (if (stream-null? s) (quote done) (begin (proc (stream-car s)) (stream-for-each proc (stream-cdr s)))))",globalEnv);
+	  //skipped display-stream and display-line for now; need to implement display etc.
+	  readeval("(define (stream-enumerate-interval low high) (if (> low high) the-empty-stream (cons-stream low (stream-enumerate-interval (+ low 1) high))))",globalEnv);
+	  readeval("(define (stream-filter pred stream) (cond ((stream-null? stream) the-empty-stream) ((pred (stream-car stream)) (cons-stream (stream-car stream)"+
+		   "(stream-filter pred (stream-cdr stream)))) (#t (stream-filter pred (stream-cdr stream)))))",globalEnv); //replaced else with #t, //TODO: add else to cond
+	  //TODO: Why does this example fail? (stream-car (stream-cdr (stream-filter even? (stream-enumerate-interval 10000 1000000)))) // ANSWER: Because of the recursion in mod -.-
+	  //skipped memo-proc, need to implement set!
+	  //skipped stuff
+	  readeval("(define (integers-starting-from n) (cons-stream n (integers-starting-from (+ n 1))))",globalEnv);
+	  readeval("(define integers (integers-starting-from 1))",globalEnv);
+	  readeval("(define (divisible? x y) (= (remainder x y) 0))",globalEnv);
+	  readeval("(define no-sevens (stream-filter (lambda (x) (not (divisible? x 7))) integers))",globalEnv);
+	  readeval("(define (sieve stream) (cons-stream (stream-car stream) (sieve (stream-filter (lambda (x) (not (divisible? x (stream-car stream)))) (stream-cdr stream)))))",globalEnv);
+	  readeval("(define primes (sieve (integers-starting-from 2)))",globalEnv);
+      }
 
-      //Streams from SICP chapter 3
-      readeval("(define delay (macro (exp) (lambda () exp)))",globalEnv);
-      readeval("(define cons-stream (macro (a b) (cons a (delay b))))",globalEnv);
-      readeval("(define (force delayed-object) (delayed-object))",globalEnv);
-      readeval("(define (stream-car stream) (car stream))",globalEnv);
-      readeval("(define (stream-cdr stream) (force (cdr stream)))",globalEnv);
-      readeval("(define the-empty-stream ())",globalEnv);
-      readeval("(define stream-null? null?)",globalEnv);
-      readeval("(define (stream-ref s n) (if (= n 0) (stream-car s) (stream-ref (stream-cdr s) (- n 1))))",globalEnv);
-      readeval("(define (stream-map proc s) (if (stream-null? s) the-empty-stream (cons-stream (proc (stream-car s)) (stream-map proc (stream-cdr s)))))",globalEnv);
-      readeval("(define (stream-for-each proc s)  (if (stream-null? s) (quote done) (begin (proc (stream-car s)) (stream-for-each proc (stream-cdr s)))))",globalEnv);
-      //skipped display-stream and display-line for now; need to implement display etc.
-      readeval("(define (stream-enumerate-interval low high) (if (> low high) the-empty-stream (cons-stream low (stream-enumerate-interval (+ low 1) high))))",globalEnv);
-      readeval("(define (stream-filter pred stream) (cond ((stream-null? stream) the-empty-stream) ((pred (stream-car stream)) (cons-stream (stream-car stream)"+
-	       "(stream-filter pred (stream-cdr stream)))) (#t (stream-filter pred (stream-cdr stream)))))",globalEnv); //replaced else with #t, //TODO: add else to cond
-      //TODO: Why does this example fail? (stream-car (stream-cdr (stream-filter even? (stream-enumerate-interval 10000 1000000)))) // ANSWER: Because of the recursion in mod -.-
-      //skipped memo-proc, need to implement set!
-      //skipped stuff
-      readeval("(define (integers-starting-from n) (cons-stream n (integers-starting-from (+ n 1))))",globalEnv);
-
-      readeval("(define integers (integers-starting-from 1))",globalEnv);
-      readeval("(define (divisible? x y) (= (remainder x y) 0))",globalEnv);
-      readeval("(define no-sevens (stream-filter (lambda (x) (not (divisible? x 7))) integers))",globalEnv);
-      readeval("(define (sieve stream) (cons-stream (stream-car stream) (sieve (stream-filter (lambda (x) (not (divisible? x (stream-car stream)))) (stream-cdr stream)))))",globalEnv);
-      readeval("(define primes (sieve (integers-starting-from 2)))",globalEnv);
-
-
+      if(FEATURE_ACCOUNT) {
+	  //changed ' to quote, eq? to equal, else to #t, crippeld the error message due to missing backquote support. I should import this again once these features are added.
+	  readeval("(define (make-account balance)"+
+		   "  (define (withdraw amount) (if (>= balance amount) (begin (set! balance (- balance amount)) balance) 'Insufficient-funds))"+
+		   "  (define (deposit amount) (set! balance (+ balance amount)) balance)"+
+		   "  (define (dispatch m) (cond ((equal? m 'withdraw) withdraw) ((equal? m 'deposit) deposit) "+
+		   "    (#t (error Unknown request -- MAKE-ACCOUNT))))  dispatch)",globalEnv);
+      }
       
       //------------------------
       // Tests and related stuff
       //------------------------
       function _test (expr, expected) {
-	  let testresult = readeval(expr, globalEnv);
-	  let expectedresult = readeval(expected, globalEnv);
-	  let message = " //expected: " + printExpr(expectedresult)  + " found: " +  printExpr(testresult);
-	  if(equal(testresult,expectedresult)) {
-	      message = "OK" + message;
+	  //Check if expr evaluates to expected. Log the result on the
+	  //console.
+	  let testresult = null;
+	  let expectedresult = null;
+	  let error = "";
+	  try {
+	      testresult =  readeval(expr, globalEnv);
+	      expectedresult = readeval(expected, globalEnv);
+	  } catch(e) {
+	      error = e;
+	  }
+	  let message = "???";
+	  if(error != "") {
+	      message = "!! // Got an error: " + error;
+	  } else if(equal(testresult,expectedresult)) {
+	      message = "OK // " + expr + " => " +  printExpr(testresult);
 	  } else {
-	      message = "!!" + message;
+	      message = "!! //expected: " + printExpr(expectedresult)  + " found: " +  printExpr(testresult);
 	  }
 	  console.log(message);
       }
 
       
       function testCases() {
-	  //misc. regression tests
-	  _test("#t",lispeval(lispeval(readeval("#t",globalEnv),globalEnv), globalEnv).value);
+	  //This function contains misc. regression tests collected
+	  //during development.
+
+	  _test("#t",trampoline(["eval",readeval("#t",globalEnv),globalEnv]).value); //self-evaluation
 	  _test("(car (cdr (cons 1 (cons 2 (cons 3 4)))))", "2");
 	  readeval("(define x 3)",globalEnv);
 	  _test ("(+ x (+ x 4))", "10");
@@ -544,27 +671,31 @@
 	  _test("(times-2 3)", "6");
  	  readeval("(define (cadr x) (car (cdr x)))",globalEnv);
 	  _test("(cadr (cons 1 (cons 2 ())))","2");
-	  //recursion:
-	  readeval("(define (sum x) (if (equal? x 0) 0 (+ x (sum (- x 1)))))",globalEnv);
+	  readeval("(define (sum x) (if (equal? x 0) 0 (+ x (sum (- x 1)))))",globalEnv); //recursion
 	  _test("(sum 15)", "120");
-	  //using predefined scheme functions:
-	  _test("(* 100 100)", "10000");
+	  _test("(* 100 100)", "10000"); //using predefined scheme functions
 	  _test("(div 250 25)", "10");
-	  //recursive fibonacci:
-	  readeval("(define (fib n) (cond ((< n 2) n) (#t (+ (fib (- n 1)) (fib (- n 2))))))",globalEnv);
+	  readeval("(define (fib n) (cond ((< n 2) n) (#t (+ (fib (- n 1)) (fib (- n 2))))))",globalEnv); //recursive fibonacci:
 	  _test("(fib 7)","13");
 	  _test("(equal? (quote (a b c)) (quote (a b c)))","#t");
 	  _test("(equal? (quote (a b c)) (quote (a b)))","#f");
-	  //yay, quote works
-	  _test("(equal? (map fib (quote (1 2 3))) (quote (1 1 2)))","#t");
-	  //factorial using the "poor man's y combinator (W. Byrd):
+	  _test("(equal? (map fib (quote (1 2 3))) (quote (1 1 2)))","#t");//yay, quote works
+	  //The Big One. Factorial using the "poor man's y combinator (W. Byrd):
 	  _test("(((lambda (!) (lambda (n) ((! !) n))) (lambda (!) (lambda (n) (cond ((equal? n 0) 1) (#t (* n ((! !) (- n 1)))))))) 5)","120");
 	  _test("(map atom? (quote (1 (2 3) hi (bye))))","(list #t #f #t #f)");
 	  _test("(reduce + (list 1 2 3 4 5) 0)","15");
-	  //this wouldn't be possible without macros
-	  _test("(if #t 1 (div 1 0))","1");
+	  _test("(if #t 1 (div 1 0))","1"); //this would produce an error without macros
 	  _test("(stream-ref no-sevens 100)","117");
+	  _test("(((make-account 100) 'withdraw) 50)","50");
+
+
+	  //-----------------------------
+	  //Longer-running tests below!!!
+	  //-----------------------------
 	  _test("(stream-ref primes 50)","233");
+	  //test tail recursion
+	  _test("(stream-car (stream-cdr (stream-filter even? (stream-enumerate-interval 10000 1000000))))","10002");
+	  _test("(div 100000 2)","50000");
       }
 
     </script>
@@ -583,24 +714,69 @@ Bugs / Missing features:
 - [X] function application mutates a lambda's environment permanently
 - [?] improve UI
 - [X] use cons instead of array
-- [ ] Tail Call Elimination 
+- [X] Tail Call Elimination (BAM, done!!!)
   -[ ] => implement queue of unevaluated lisp expressions, turn js-recursion into loop
 - [X] fix equal? for quote and lambda. and fix it again. fix quote.
 - [X] add (map f l)
+- [X] begin
+- [ ] let
 
 Bonus-features
 - [X] (list ...), 
 - [X] print conses as lists
-- 'quote
+- [X] 'quote
 - unquote, splicing
 - [X] Numbers as functions?
 - js-eval?
 - Strings?
 - macros & definitions from Lisp Micro Manual
 - make memory-management explicit by using a stack of environments? 
-  (bad idea, because new environments could use any existing one as their parent)
+  (bad idea, because new environments could use any existing one as their parent,
+   so this means fullblown garbage-collection)
 - set! to change value in env higher up the chain
 - display, ...
+
+/////////////////////////////////////////////////////
+// What's still missing for an R4RS-compliant Scheme?
+/////////////////////////////////////////////////////
+easy, symbolic:
+- type predicates (pair?, list?, boolean?, char?,string?, number?, procedure?, ...)
+- begin (mit lambda, aber environment beachten)
+- cddadr etc.
+- length, append, reverse, list-tail (aka drop, definition ist in r4rs), list-ref
+- memq, memv, member (trivial, wenn die eq-prädikate passen)
+- assq, assv, assoc
+
+easy, numbers:
+- number predicates (exact?, odd?, zero?, ...)
+- min, max (variadic) , abs
+- gcd, lcm
+- floor, ceiling, round, truncate
+- exp, log, sin, ... (wenn reals implementiert sind)
+
+probably relatively easy:
+- strings, symbol->string, string-symbol
+- better number types (rationals, reals, complex)
+- set!
+- else in cond
+- and/or variadic
+- case 
+- let, letrec, let*
+- do
+- eqv, eq
+- set-car!, set-cdr!
+- vectors (r4rs section 6.8)
+- eval, apply
+- map variadic, for-each
+
+probably difficult:
+- quote syntax
+- quasiquote
+- dotted pairs
+- call/cc
+- input/output-ports
+- system interface
+
 
 
 -->
