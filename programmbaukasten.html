@@ -46,59 +46,125 @@
 		replace(/\)/g, " ) ").
 		replace(/\n/g, " ").
 		replace(/\t/g, " ");
-	  return withSpaces.split(" ");
+	  return withSpaces.split(" ").filter(string=>string.length>0);
       }
 
-      function parseAST(tokens, ast) {
+      function parseAST(tokens) {
 	  //transform the flat array from tokenize() into a hierarchical AST
-	  let token = 0;
+	  function parseToken(token) {
+	      if(token===undefined) {
+		  throw "Empty input";
+	      } else if(token === "(") {
+		  return parseList();
+	      } else if  (token.match(/^[0-9]+$/) != null) {
+		  return {type: "number", value: parseInt(token)};
+	      } else if (token.match(/^[a-zA-Z0-9\+\-\*\#\?\<\>]+$/) != null) {
+		  return {type: "symbol", value: token};
+	      } else {
+		  throw "Error: no matching case found for " + token;
+	      }
+	  }
+	  function append(list, element) {
+	      let help = list;
+	      if(list === globalEnv["()"]) {
+		  return {type: "cons", car: element, cdr: globalEnv["()"]};
+	      } else {
+		  while(help.cdr != globalEnv["()"]) {
+		      if(help.type != "cons") {
+			  console.log(help);
+			  throw "append: not a proper List " + help.type;
+		      }
+		      help = help.cdr;
+		  }
+		  help.cdr = {type: "cons", car: element, cdr: globalEnv["()"]};
+		  return list;
+	      }
+	  }
+	  function parseList() {
+	      let list = globalEnv["()"];
+	      while(true) {
+		  token = tokens.shift();
+		  if(token === undefined) {
+		      throw "Error: Missing ')'";
+		  } else if (token === ")") {
+		      return list;
+		  } else {
+		      list = append(list, parseToken(token));
+		  }
+	      }
+	  }
+  	  let token = 0;
+	  let ast = globalEnv["()"];
 	  token = tokens.shift();
-	  if(token === undefined) {
-	      return ast.pop() || []; //[] to catch empty input
-	  }
-	  if(!typeof token === "string") {
-	      throw "Error: Token is not a string " + token;
-	  }
-	  if(token === "") {
-	      return parseAST(tokens, ast);
-	  }
-	  else if (token === "(") {
-	      ast.push(parseAST(tokens, []));
-	      return parseAST(tokens, ast);
-	  } else if (token === ")") {
-	      return ast;
-	  } else if (token.match(/^[0-9]+$/) != null) {
-	      ast.push({type: "number", value: parseInt(token)});
-	      return parseAST(tokens, ast);
-	  } else if (token.match(/^[a-zA-Z0-9\+\-\*\#\?\<\>]+$/) != null) {
-	      ast.push({type: "symbol", value: token});
-	      return parseAST(tokens, ast);
+	  if(token === "(") {
+	      ast = parseList();
 	  } else {
-	      throw "Error: no matching case found for " + token;
+	      ast = parseToken(token);
+	  }
+	  return ast;
+      }
+
+
+      function* generateCons(cons) {
+	  if(cons === globalEnv["()"]) {
+	      return cons;
+	  } else if (cons.type != "cons") {
+	      throw "generateCons expected cons, found" + cons.type;
+	  } else {
+	      while(cons.type === "cons") {
+		  yield cons.car;
+		  cons = cons.cdr;
+	      }
+	  }
+      }
+
+      function lengthCons(cons) {
+	  let n = 0;
+	  while(true) {
+	      if(cons === globalEnv["()"]) {
+		  return n;
+	      } else if (cons.type === "cons") {
+		  n = n + 1;
+		  cons = cons.cdr;
+	      } else {
+		  throw "lengthCons: not a proper list: " + cons.type;
+	      }
+	  }
+      }
+
+      function nthCons(cons, n) {
+	  //gets the nth value from a list, starting with element 0.
+	  while(true) {
+	      if(n <= 0) {
+		  return cons.car;
+	      }
+	      n = n - 1;
+	      cons = cons.cdr;
 	  }
       }
       
       function lispeval (ast,env) {
 	  //evaluatest the expression ast (as computed by parseAST) in the environment env
-	  if(Array.isArray(ast)) {
-	      //if the expr is a list
-	      if(ast.length === 0) {
-		  return globalEnv["()"];
-	      }
-	      let car = ast[0];
-	      if (car.value === "define") {
+
+	  //console.log("DEBUG: lispeval");
+	  //console.log(ast);
+	  //console.log(env);
+	  if(ast.type === "cons") {
+	      if (ast.car.value === "define") {
 		  //this takes care of McCarthy's LABEL rule, as a define'd procedure is
 		  //executed in an environment where it's already bound. Much more SICP style.
-		  if (ast[1].type === "symbol") {
-		      env[ast[1].value] = lispeval(ast[2],env);
-		  } else if (Array.isArray(ast[1])) {
-		      let spec = ast[1];
-		      let body = ast.slice(2);
-		      env[spec[0].value] = {type: "lambda", args: spec.slice(1), env: {__parent : env}, body: body};
+		  if (ast.cdr.car.type === "symbol") {
+		      env[ast.cdr.car.value] = lispeval(ast.cdr.cdr.car,env);
+		  } else if (ast.cdr.car.type === "cons") {
+		      let spec = ast.cdr.car;
+		      let body = ast.cdr.cdr;
+		      env[spec.car.value] = {type: "lambda", args: spec.cdr, env: {__parent : env}, body: body};
+		  } else {
+		      throw "Error: define expected a symbol or a cons (i.e. function spec), found" + ast.cdr.car;
 		  }
-	      } else if (car.value === "+") {
+	      } else if (ast.car.value === "+") {
 		  let result = 0;
-		  for(let element of ast.slice(1)) {
+		  for(let element of generateCons(ast.cdr)) {
 		      let obj = lispeval(element, env);
 		      if (obj.type == "number") {
 			  result += obj.value;
@@ -107,9 +173,9 @@
 		      }
 		  }
 		  return {type: "number", value: result};
-	      } else if (car.value === "-") {
-		  let result = lispeval(ast[1],env).value;
-		  for(let element of ast.slice(2)) {
+	      } else if (ast.car.value === "-") {
+		  let result = lispeval(ast.cdr.car,env).value;
+		  for(let element of generateCons(ast.cdr.cdr)) {
 		      let obj = lispeval(element, env);
 		      if (obj.type == "number") {
 			  result -= obj.value;
@@ -118,9 +184,9 @@
 		      }
 		  }
 		  return {type: "number", value: result};
-	      } else if (car.value === "<") {
-		  let x = lispeval(ast[1], env).value;
-		  let y = lispeval(ast[2], env).value;
+	      } else if (ast.car.value === "<") {
+		  let x = lispeval(ast.cdr.car, env).value;
+		  let y = lispeval(ast.cdr.cdr.car, env).value;
 		  if (x != undefined && y != undefined) {
 		      if(x < y) {
 			  return(globalEnv["#t"]);
@@ -130,86 +196,82 @@
 		  } else {
 		      throw "cannot compare " + x + " and " + y;
 		  }
-	      } else if (car.value === "quote") {
-		  ast.pop();
+	      } else if (ast.car.value === "quote") {
 		  return ast;
-	      } else if (car.value === "car") {
-		  let obj = lispeval(ast[1], env);
+	      } else if (ast.car.value === "car") {
+		  let obj = lispeval(ast.cdr.car, env);
 		  if(obj.type === "cons") {
 		      return obj.car;
 		  } else {
 		      throw "Not a cons cell: " + obj;
 		  }
-	      } else if (car.value === "cdr") {
-		  let obj = lispeval(ast[1], env);
+	      } else if (ast.car.value === "cdr") {
+		  let obj = lispeval(ast.cdr.car, env);
 		  if(obj.type === "cons") {
 		      return obj.cdr;
 		  } else {
 		      throw "Not a cons cell: " + obj;
 		  }
-	      } else if (car.value === "cons") {
-		  return {type: "cons", car: lispeval(ast[1],env), cdr: lispeval(ast[2],env)};
-	      } else if (car.value === "equal?") {
-		  if(equal(ast[1],ast[2], env)) {
+	      } else if (ast.car.value === "cons") {
+		  return {type: "cons", car: lispeval(ast.cdr.car,env), cdr: lispeval(ast.cdr.cdr.car,env)};
+	      } else if (ast.car.value === "equal?") {
+		  if(equal(ast.cdr.car,ast.cdr.cdr.car, env)) {
 		      return globalEnv["#t"];
 		  } else {
 		      return globalEnv["#f"];
 		  }
-	      } else if (car.value === "atom?") {
-		  if (lispeval(ast[1], env).type === "cons") {
+	      } else if (ast.car.value === "atom?") {
+		  if (lispeval(ast.cdr.car, env).type === "cons") {
 		      return globalEnv["#f"];
 		  } else {
 		      return globalEnv["#t"];
 		  }
-	      } else if (car.value === "cond") {
-		  for(let clause of ast.slice(1)) {
-		      let condition = lispeval(clause[0], env);
+	      } else if (ast.car.value === "cond") {
+		  for(let clause of generateCons(ast.cdr)) {
+		      let condition = lispeval(clause.car, env);
 		      if(condition.value != "#f") {
-			  return lispeval(clause[1],env);
+			  return lispeval(clause.cdr.car,env);
 			  break;
 		      }
 		  }
 		  return globalEnv["()"];
-	      } else if (car.value === "lambda") {
-		  return {type: "lambda", args: ast[1], env: {__parent : env}, body: ast.slice(2)};
+	      } else if (ast.car.value === "lambda") {
+		  return {type: "lambda", args: ast.cdr.car, env: {__parent : env}, body: ast.cdr.cdr};
 	      } else {
 		  //Function application
-		  let fun = lispeval(car, env);
+		  let fun = lispeval(ast.car, env);
 		  if(fun === undefined) {
-		      throw "unknown function: " + car.value;
+		      throw "unknown function: " + ast.car.value;
 		  }
 		  //console.log("DEBUG: eval(function)");
 		  //console.log(fun);
 		  let args = [];
-		  for (let arg of ast.slice(1)) {
+		  for (let arg of generateCons(ast.cdr)) {
 		      args.push(lispeval(arg,env));
 		  }
 		  if(fun.type != "lambda") {
 		      throw "cannot apply: " + fun.type + " " + fun.value;
 		  }
-		  if(args.length != fun.args.length) {
+		  if(args.length != lengthCons(fun.args)) {
 		      throw "wrong number of arguments. expected " +
 			  fun.args.length + " got " + args.length;
 		  }
 		  for(let i = 0; i < args.length; i++) {
-		      fun.env[fun.args[i].value] = args[i];
+		      fun.env[nthCons(fun.args,i).value] = args[i];
 		  }
 		  let result = globalEnv["()"];
-		  for(let expr of fun.body){
+		  for(let expr of generateCons(fun.body)){
 		      result = lispeval(expr,fun.env);
 		  }
 		  return result;
 	      }
 	  } else {
+	      //the expression is an atom
 	      if (ast.type === "number") {
 		  return ast;
 	      } else if (ast.type === "symbol") {
 		  let astValue = getVal(ast.value,env);
-		  //if (astValue === undefined) {
-		  //    throw "Undefined value: " + ast.value;
-		  //} else {
 		      return astValue;
-		  //}
 	      } else {
 		  throw "illegal type: " + ast;
 	      }
@@ -256,8 +318,13 @@
 	      return "&lt;no value&gt;";
 	  }
 	  if(expr.type == "cons") {
-	      return "(cons " + printExpr(expr.car) +
-		  " " + printExpr(expr.cdr) + ")";
+	      let result = "( ";
+	      for(let element of generateCons(expr)) {
+		  result += printExpr(element) + " ";
+	      }
+	      return result + ")";	      
+	  } else if(expr.type === "lambda"){
+	      return "(lambda " + printExpr(expr.args) + " " + printExpr(expr.body) + " )";
 	  } else {
 	      return expr.value;
 	  }
@@ -317,16 +384,18 @@
 <!--
 TODO:
 Bugs / Missing features:
-- +, -, < can't be used in higher-order functions. Define + as a function and use primitive-plus as special form?
-  - However, this makes variadic + impossible right now. Implement variadic functions?
-- quote is broken?
-- define <=, >=, and, or, if, ...
-- printExpr doesn't handle lambda yet
-- function application mutates a lambda's environment permanently
-- improve UI
+- [ ] +, -, < can't be used in higher-order functions. Define + as a function and use primitive-plus as special form?
+  - [ ] However, this makes variadic + impossible right now. Implement variadic functions?
+- [X] quote is broken?
+- [ ] define <=, >=, and, or, if, ...
+- [X] printExpr doesn't handle lambda yet
+- [ ] function application mutates a lambda's environment permanently
+- [?] improve UI
+- [X] use cons instead of array
 
 Bonus-features
-- (list ...), print conses as lists
+- (list ...), 
+- [X] print conses as lists
 - 'quote
 - Macros?
 - Numbers as functions?
