@@ -1,0 +1,73 @@
+#+title: der programmbaukasten -- documentation
+
+TL;DR: It's a scheme interpreter. It's incomplete, it's not particularly interesting. I wrote it as a learning experience.
+
+* License
+GPLv3
+* Installation
+- Open programmbaukasten.html in your favorite standard-compliant web browser.
+* Backstory / Dev diary
+- I wrote a hacky Scheme interpreter in one day. I've been planning to do this for a long time. On the first day, I got much further than I expected.
+- The interpreter handles basic data and operations. At the current time, progress still comes easy. For a list of limitations, see TODO-List at the end of the source code.
+- After a few days of hacking, the interpreter supports +macros+ (see below) and tail recursion. I want to extend it to an R5RS-compliant version. Alternatively, I might limit myself to the subset of Scheme presented in SICP.
+- The interpreter was originally planned to be minimalistic. As such, it implemented even basic stuff like ~div~, ~mod~ or ~*~ in Scheme. Recursively. I have changed that, although the original implementation can be activated by setting ~FEATURE_MINIMAL_MATH~ to ~true~ in the js source.
+- I started programming by copying the ideas from Mary Rose Cook's Little Lisp interpreter (https://www.youtube.com/watch?v=hqnTvuvXPCc). I quickly changed the ASTs from Arrays to my internal cons representation. The interpreter was initially written recursively. I changed eval and apply to use a trampoline function (see https://clojuredocs.org/clojure.core/trampoline) to enable tail call optimization. [WARNING: The current implementation is not proper TCO. I free the space on the js call stack, but I still keep all environments. I will have to write some code (in the if-block for the final statement in a function) that figures out if an environment won't be needed later on and removes it from the environment chain. Nevertheless, the current implementation avoids "too much recursion"-errors for simple examples.]
+- I wrote a "macro system" (if you can call it that), mostly to implement ~if~ in terms of ~cond~. "Macros" in this system are like lambdas, except they don't evaluate their arguments until they are used. The arguments will be evaluated in the dynamic environment, all other expressions will be evaluated in the lexical environments. In contrast to FEXPRs it is not possible to access the unevaluated arguments. If an argument is used twice in the macro's body, it will be evaluated twice, mind the side effects! I don't know which macro system I have reinvented, but it makes enough sense that I suppose I'm not the first one to have this idea. The next step towards real macros will be quasiquote. I want to support R5RS compatible macros, but I don't want to slow down to understand those right now.
+* Features
+- Currently, the most complex program that the interpreter can successfully run is an incomplete scheme implementation of "CASTING SPELS IN LISP" (http://www.lisperati.com/casting.html). You can try it +by evaluating (load "examples/spels.scm")+ (this was recently broken by new security rules in Firefox and Chrome; Instead you can copy the file's contents into the REPL by hand). This example will be continuously updated to reflect the current state of my Scheme implementation.
+- *For a list of all functions in the global environment, you can type ~GLOBAL_ENV~ into your browser's developer console*
+- The interpreter currently supports (all features are supposed to work as described in SICP unless stated otherwise):
+  - Data types
+    - Symbols (the allowed characters are specified by an ugly regexp): ~atom?~
+    - Numbers (positive and negative integers)
+      - Basic arithmetic: ~+~, ~-~, ~div~, ~mod~, ~>~, ~>=~, ~<~, ~<=~, ~=~, 
+      - Additional functions: ~gcd~, ~lcm~, ~abs~, ~even?~, ~odd~
+    - Pairs/Lists: ~cons~, ~car~, ~cdr~, ~c***r~ functions,  ~list~, ~null?~
+      - List functions: ~drop~, ~list-tail~, ~list-ref~, ~length~, ~take~, ~append~, ~append-2~, ~reverse~, ~member~
+      - association lists: ~assoc~, 
+    - Mutation: ~set!~, ~set-car!~, ~set-cdr!~
+    - Type predicates ~type~, ~atom?~, ~boolean?~, ~pair?~, ~symbol?~, ~number?~, ~procedure?~
+  - Functions & Variables
+    - Anonymous functions with ~lambda~
+    - Scheme-style ~define~ (for both procedures and constants)
+      - Variadic functions are supported by binding a list of remaining arguments to the parameter ~&rest~ if it is present in the parameter list.
+    - Tail recursion (mostly)
+    - Higher order functions: ~map~, ~reduce~, ~filter~
+  - Pseudo-Macros (incompatible with any lisp that I'm aware of): A "macro" is an expression of the form ~(macro (args...) body ...)~. It works like lambda, except for the fact, that the arguments are put into the environment without evaluation. They are evaluated on *each* use (watch out for side effects!). Macros can be bound to identifiers using define. Arguments will be evaluated in the dynamic environment (i.e. like function parameters, just later), everything else will use the lexical environment like a normal function.
+  - Control flow: ~while~, ~begin~
+  - Conditionals: ~if~, ~and~, ~or~, ~not~, ~cond~
+  - Streams as defined in SICP chapter 3. Work in progress. Set FEATURE_STREAMS in the js source to false to exclude this. (~cons-stream~, ~delay~, ~force~, ~stream-car~, ~stream-cdr~, ~the-empty-stream~, ~stream-null?~, ~stream-ref~, ~stream-map~, ~stream-for-each~, ~stream-enumerate-interval~, ~stream-filter~, ~integers-starting-from~, ~integers~, ~divisible?~, ~no-sevens~, ~sieve~, ~primes~)
+  - The account example from SICP. Set FEATURE_ACCOUNT in the js source to false to exclude this. Check the source code for the implemented functions (Ctrl+F ACCOUNT).
+  - ~quote~ , ~quasi-quote~ aka ~`~, and ~unquote~ aka ~,~
+  - System and host language interaction: ~load~ (currently broken for offline use), ~js-eval~, ~js-alert~
+* Notable Missing Features
+- Proper hygenic macros
+- ~call/cc~
+- Integers, Rationals
+- Vectors
+- ...
+- see TODO.org
+* Implementation Details
+- At its core, this is a /very/ simple interpreter. Any user input is handled the following way:
+  - Read the input into a string
+  - Surround all parentheses with space characters
+  - Split the string at all space characters (this was inspired by https://maryrosecook.com/blog/post/little-lisp-interpreter )
+  - Take the resulting "token stream" and parse it into an AST. The nodes of this AST are javascript objects, e.g.:
+    - ~{type: "number" value: 5}~
+    - ~{type: "symbol" value: "hello"}~
+    - ~{type: "cons" car: reference_to_car, cdr: reference_to_cdr}~
+    - see the function ~parseAST~ for all possible types
+  - Pass the AST to the functions ~lispeval~ and ~lispapply~ (both via the function ~trampoline~)
+    - ~trampoline~ is called in a loop, which replaces tail-recursive calls from eval to apply and vice versa.
+    - ~trampoline~ expects a single argument, ~packedArgs~. ~packedArgs[0]~ is supposed to be one of "value", "eval" or "apply". "value" means that ~packedArgs[1]~ can be returned as a result, "eval" and "apply" mean that ~lispeval~ or ~lispapply~ should be called with the arguments in ~packedArgs[1]~, ~packedArgs[2]~, ...
+    - According to this, eval and apply often return results of the form ~["eval", someExpression, someEnvironment]~ or ~["apply", aFunction, anParameterList, anEnvironment, aDebugName]~.
+  - Print the result
+- Most things are implemented in a very naive way:
+  - Environments are javascript objects mapping symbols to values.
+  - Each environment contains a key "__parent" which links it to the surrounding scope.
+  - Lambdas contain a list of arguments, code and an environment linked to the lexical environment.
+  - The interpreter provides certain primitives, e.g. for arithmetic operations. To enable more introspection, the primitive versions are named ~primitive-xyz~ and are wrapped into corresponding scheme functions named ~xyz~. Access to the primitive versions of these operations is limited.
+- Minor implementation details (don't rely on those):
+  - various interpreter features can be toggled on or off  using the constants named ~FEATURE_XYZ~ at the beginning of the javascript code
+  - the function ~_test(expr, expected)~ checks if ~expr~ evaluates to ~expected~ (both should be provided as strings). the function ~testCases()~ contains some example tests
+  - some additional documentation is available as a long comment at the end of the interpreter's source code

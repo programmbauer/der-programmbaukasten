@@ -1,0 +1,128 @@
+* Changelog:
+- v0.2:
+  - [!] Changed AST format from Array to cons cells
+  - Filter empty tokens during tokenizing, making later code cleaner
+- v0.3:
+  - [!] New primitives: apply, macro
+  - Changed names of primitives to "primitive-", introduced scheme methods that call those primitives (to enable things like (map + ...) )
+  - js readability: introdusced NIL, _T, _F  as a js contants, introduced makeEnv()
+  - Stream examples from SICP
+  - Introduced _test() to make tests more readable
+  - New tests and examples
+- v0.4:
+  - [!] Introduced trampoline() to enable tail recursion
+  - [!] 'sexp syntax
+  - [!] New primitive: set!
+  - General cleanup, comments, consts as switches for individual features
+  - New tests and examples
+- v0.5:
+  - [!] New primitives: set-car!, set-cdr!, eval
+  - New functions: drop, take, begin, various list functions
+  - UI improvements: Focus input text field on page load, eval code when Enter is pressed
+- v0.6:
+  - New primitives: primitive-{multiply,quotient,modulo}. The old implementation is available via FEATURE_MINIMAL_MATH
+  - Read syntax (without proper behavior!) for quasi-quote(`) and unquote(,).
+  - New primitive primitive-type, new functions: type predicates, removed: primitive-atom
+- v0.7:
+  - [!] Temporary support for let. Will be replaced once proper macros are implemented
+  - Preliminary support for quasi-quote (`) and unquote (,)
+  - loading files via loadFile() (
+    - [X] TODO: provide a user interface for this
+  - [!] Strings
+  - new function: js-eval
+  - new functions: concat, load
+
+* TODO:
+Bugs / Missing features:
+- [X] +, -, < can't be used in higher-order functions. Define + as a function and use primitive-plus as special form?
+  - [X] However, this makes variadic + impossible right now. Implement variadic functions?
+- [X] quote is broken?
+- [X] define <=, >=, and, or, if, ...
+- [ ] real Macros?
+- [X] printExpr doesn't handle lambda yet (fixed to remove () around body)
+- [X] function application mutates a lambda's environment permanently
+- [?] improve UI
+  - [X] load files
+  - [ ] move scheme code to external .scm file
+  - [ ] add multi-line code editor
+- [X] use cons instead of array
+- [X] Tail Call Elimination (BAM, done!!!)
+  - [X] => implement queue of unevaluated lisp expressions, turn js-recursion into loop (DONE, implemented trampolining intead)
+- [X] fix equal? for quote and lambda. and fix it again. fix quote.
+- [X] add (map f l)
+- [X] begin
+- [HACK] let
+- [ ] else in cond
+- [ ] implicit code blocks (i.e. (begin ...)) in cond, if, ... (where else?)
+- [X] eq?, primitive division/multiplication
+- [X] add strings
+  - [LOLNOPE] refactor parser to consume each character separately. should work without lookahead
+- [ ] add vectors. javascript arrays and a few primitives.
+- [X] Whitespace in strings is sometimes replaced by a single " ". (fixed, should have used a <pre> for the output)
+
+Bonus-features
+- [X] (list ...), 
+- [X] print conses as lists
+- [X] 'quote
+- quasi-quote
+  - [X] quasi-quote
+  - [X] unquote 
+  - [ ] splicing
+- [X] Numbers as functions?
+- js-eval?
+- macros & definitions from Lisp Micro Manual
+- make memory-management explicit by using a stack of environments? 
+  (bad idea, because new environments could use any existing one as their parent,
+   so this means fullblown garbage-collection)
+- [X] set! to change value in env higher up the chain
+- display, ...
+- change macros to memoize? or let the user explicitly eval parameters 
+  (the latter choice would remove the macro-specific env.__get() code )
+  (what do real FEXPRs do?)
+  (or: kill the current macro system, implement syntax-rules)
+- change environments to proper hash tables (or alists and make them accessible in scheme)
+- define proper object types for each lisp data type
+- define equal? in terms of eq?
+- make strings an optional FEATURE_ ? 
+
+* What's still missing for an R5RS-compliant Scheme?
+
+- easy, symbolic:
+  - type predicates (pair?, list?, boolean?, char?,string?, number?, procedure?, ...)
+  - [X] begin (as lambda, environment???)
+  - [X] cddadr etc.
+  - [X] length, append, reverse, list-tail (aka drop, definition is in r5rs), list-ref
+  - memq, memv, member (trivial, once eq-predicate are defined)
+  - assq, assv, assoc
+
+- easy, numbers:
+  - number predicates (exact?, odd?, zero?, ...)
+  - [ ] min, max (variadic)
+  - [X] abs
+  - [X] gcd, lcm
+  - floor, ceiling, round, truncate (once reals are implemented)
+  - exp, log, sin, ... (once reals are implemented)
+
+- probably relatively easy:
+  - strings, symbol->string, string-symbol
+  - better number types (rationals, reals, complex)
+  - [X] set!
+  - else in cond
+  - and/or variadic
+  - case 
+  - let, letrec, let*
+  - do
+  - eqv, eq
+  - [X] set-car!, set-cdr!
+  - vectors (r4rs section 6.8)
+  - eval, apply
+  - map variadic, for-each
+
+- probably difficult:
+  - [X] quote syntax
+  - [X] quasiquote, unquote
+  - dotted pairs
+  - syntax-rules, define-syntax, let-syntax
+  - (call/cc)
+  - input/output-ports
+  - system interface

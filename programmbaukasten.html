@@ -2,7 +2,7 @@
 <html>
   <head>
     <meta charset="UTF-8"> 
-    <title>T1-Lisp</title>
+    <title>der programmbaukasten.</title>
   </head>
   <body onload="document.querySelector('#input').focus();">
     <style>
@@ -16,8 +16,12 @@
       }
       .UI {
 	  font-family: Courier;
+	  font-size: 12pt;
 	  font-weight: bold;
 	  background: white;
+      }
+      .greyed-out {
+	  color: grey;
       }
       .error {
 	  color: red;
@@ -25,7 +29,7 @@
     </style>
     <div class="UI">
       <h2>der programmbaukasten.</h2>
-      <div id="output"><i>Version 0.6</i></div>
+      <div><pre id="output"><i>Version 0.7</i></pre></div>
       <div>
 	<span>&gt; <input class="UI" type="text" id="input"></span><br>
 	<button id="eval-button" class="UI" type="button" onclick="run();">Eval!</button>
@@ -40,8 +44,8 @@
       const FEATURE_INFIX   = false;  //enable infix arithmetic aka numbers as pseudo-actors
       const FEATURE_STREAMS = true; //load the stream example from SICP chapter 3
       const FEATURE_ACCOUNT = true; //load the bank account example from SICP chapter 3
-      const FEATURE_MINIMAL_MATH = false; //implement multiplication as repeated addition etc
-                                          //at the cost of efficiency
+      const FEATURE_MINIMAL_MATH = false; //implement multiplication as repeated addition etc.
+                                          //Fewer primitive operations, at the cost of efficiency
       
       //Editor features
       let   DEBUG_TRACE = false; //trace (i.e. log to console) every
@@ -68,7 +72,7 @@
 	  const output = document.querySelector('#output');
 	  const input  = document.querySelector('#input');
 	  if(output.innerHTML != "") { output.innerHTML += "<br>";}
-	  output.innerHTML += "&gt; " + escapeHtml(input.value);// + "<br>";
+	  output.innerHTML += '<span class="greyed-out">&gt; ' + escapeHtml(input.value)+'</span>';// + "<br>";
 	  let result = "";
 	  try {
 	      result = escapeHtml(printExpr(readeval(input.value,GLOBAL_ENV)));
@@ -87,11 +91,45 @@
 	      run();
 	  }
       }); //run code when enter is pressed
+
+      //------------------------------
+      // Functions for loading files
+      //------------------------------
+
+      function loadFile(url){
+	  var request = new XMLHttpRequest();
+	  request.open('GET', url, true);
+	  request.overrideMimeType("text/plain; charset=x-user-defined");
+	  request.send(null);
+	  request.onreadystatechange = function () {
+              if (request.readyState === 4 && request.status === 200) {
+		  var type = request.getResponseHeader('Content-Type');
+		  if (type.indexOf("text") !== 1) {		      
+		      readeval(request.responseText, GLOBAL_ENV);
+		      output.innerHTML += '<br><span class="greyed-out">loaded file: ' + url + '</span>';// + "<br>";
+		  }
+              }
+	  }
+      }
       
       //------------------------------
       // Parsing related stuff
       //------------------------------
       function tokenize(inputString){
+	  const groups = inputString.split(/(\".*?\")/); //split at ".*" strings, but keep them (thanks to the grouping parentheses)
+	  let tokens = [];
+	  for (let group of groups) {
+	      if(group.startsWith('"')){
+		  tokens.push(group); //keep strings as they are
+	      } else {
+		  tokens = tokens.concat(tokenizeNonString(group)); //split everything else
+	      }
+	  }
+	  return tokens;
+      }
+
+      
+      function tokenizeNonString(inputString){
 	  //Insert spaces before and after parentheses, then split at
 	  //spaces to get a flat array of tokens
 	  const withSpaces = inputString.
@@ -102,7 +140,7 @@
 		replace(/\,/g, " , ").
 		replace(/\n/g, " ").
 		replace(/\t/g, " ");
-	  return withSpaces.split(" ").filter(string=>string.length>0);
+	  return withSpaces.split(/\s+/).filter(string=>string.length>0);
       }
 
       function* parseAST(tokens) {
@@ -130,7 +168,13 @@
 		  return {type: "number", value: parseInt(token)};
 	      } else if (token.match(/^[a-zA-Z0-9\#\!\$\%\&\*\+\-\.\/\:\<\=\>\?\@\^\_\~]+$/) != null) {
 		  return {type: "symbol", value: token};
+	      } else if (token.match(/^\".*\"$/)) {
+		  return {type: "string", value: token.slice(1,-1)};
 	      } else {
+		  //debug
+		  for(let char of token) {
+		      console.log(char.charCodeAt(0));
+		  }
 		  throw "Invalid token: " + token;
 	      }
 	  }
@@ -147,6 +191,9 @@
 		      throw "Missing ')'";
 		  } else if (token === ")") {
 		      return list;
+		  } else if ((/^\s+$/g).test(token)) {
+		      //console.log("ignored whitespace");
+		      continue;
 		  } else {
 		      list = append(list, parseToken(token));
 		  }
@@ -158,6 +205,9 @@
 	      token = tokens.shift();
 	      if(token === "(") {
 		  ast = parseList();
+	      } else if ((/^\s+$/g).test(token)) {
+		  //console.log("ignored whitespace");
+		  continue;
 	      } else {
 		  ast = parseToken(token);
 	      }
@@ -315,6 +365,17 @@
 		  } else {
 		      throw "set-car! expected a cons cell, fond " + printExpr(ast.cdr.car);
 		  }
+	      } else if (ast.car.value === "primitive-concat") {
+		  let a = trampoline(["eval",ast.cdr.car, env]);
+		  let b = trampoline(["eval",ast.cdr.cdr.car, env]);
+		  if (a.type != "string") {
+		      throw "Cannot concat: " + printExpr(a);
+		  }
+		  if (b.type != "string") {
+		      throw "Cannot concat: " + printExpr(b);
+		  }
+		  let result = a.value+b.value;
+		  return ["value", {type: "string", value: result}];
 	      } else if (ast.car.value === "primitive-plus") {
 		  let a = trampoline(["eval",ast.cdr.car, env]);
 		  let b = trampoline(["eval",ast.cdr.cdr.car, env]);
@@ -387,6 +448,13 @@
 		      throw "Quote expects a single argument. Maybe use a list, e.g. (quote (a b c))?";
 		  }
 		  return ["value", ast.cdr.car];
+	      } else if (ast.car.value === "quasi-quote") {
+		  return ["value", evalQuasiQuote(ast.cdr.car, env)];
+	      //} else if (ast.car.value === "unquote") { //TODO: Is this necessary??? TODO: delete
+	      //  if(ast.cdr.cdr != NIL) {
+	      //      throw "Quote expects a single argument. Maybe use a list, e.g. (quote (a b c))?";
+	      //  }
+	      //  return ["value", ast.cdr.car];
 	      } else if (ast.car.value === "primitive-eval") {
 		  if(ast.cdr.cdr != NIL) {
 		      throw "eval expects a single argument.";
@@ -448,6 +516,15 @@
 		  let fun = trampoline(["eval",ast.cdr.car,env]);
 		  let args = env.__get(ast.cdr.cdr.car.value);
 		  return ["apply",fun,args,env, ast.cdr.cdr.car.value];
+	      } else if (ast.car.value === "primitive-js-eval") {
+		  if(typeof(ast.cdr.car.value) === "string") {
+		      let jsExpr = trampoline(["eval", ast.cdr.car, env])
+		      let jsResult = eval(jsExpr.value) + "";
+		      
+		      return ["value", {type:"string", value: jsResult}]; //TODO: change to proper string
+		  } else {
+		      throw "js-eval can only eval strings, found " + typeof(ast.cdr.car.value);
+		  }
 	      } else if (ast.car.value === "cond") {
 		  for(let clause of generateCons(ast.cdr)) {
 		      let condition = trampoline(["eval",clause.car, env]);
@@ -463,6 +540,18 @@
 		  return ["value", {type: "macro",  args: ast.cdr.car, env: makeEnv(env), body: ast.cdr.cdr}];
 	      } else if (ast.car.value === "error") {
 		  throw printExpr(ast.cdr);
+	      } else if (ast.car.value === "let") { //TODO: remove/hide once proper macros are implemented
+		  let bindings = ast.cdr.car;
+		  let body = ast.cdr.cdr;
+		  let letEnv = makeEnv(env);
+		  for(let binding of generateCons(bindings)) {
+		      letEnv[binding.car.value] = trampoline(["eval", binding.cdr.car, env]);
+		  }
+		  let result = null;
+		  for(let expression of generateCons(body)) {
+		      result = trampoline(["eval", expression, letEnv]);
+		  }
+		  return ["value", result];
 	      } else {
 		  //--------------------
 		  //Function application
@@ -476,7 +565,9 @@
 
 		  //The following code allows for numbers as functions.
 		  //Functions apply their first arg to (cons <themself> <& following args>).
-		  //Thus, (fully parenthesized) infix arithmetic can be used. This is inspired by The history of Lisp [??] section ?? //TODO: add source
+		  //Thus, (fully parenthesized) infix arithmetic can be used.
+		  //This is inspired by Gabriel and Steele, Evolution of Lisp
+		  //https://www.dreamsongs.com/Files/HOPL2-Uncut.pdf (see page 94)
 		  //This feature can be turned off by setting FEATURE_INFIX to false.
 		  if(FEATURE_INFIX && fun.type === "number") {
 		      let args = NIL;
@@ -522,6 +613,8 @@
 		      throw "Unknown symbol: " + printExpr(ast);
 		  }
 		  return ["value", astValue];
+	      } else if (ast.type === "string") {
+		  return ["value", ast];
 	      } else {
 		  throw "Illegal type: " + ast;
 	      }
@@ -623,6 +716,24 @@
 	  }	  
       }
 
+      function evalQuasiQuote(ast,env) {
+	  if(ast === NIL) {
+	      return NIL ;
+	  } else if (ast.type === "cons") {
+	      if(ast.car.type === "symbol" && ast.car.value === "unquote") {
+		  if(ast.cdr.cdr != NIL) {
+		      throw "Unquote expects a single argument. Maybe use a list, e.g. (quote (a b c))?";
+		  } else {
+		      return trampoline(["eval",ast.cdr.car,env]);
+		  }
+	      } else {
+		  return {type:"cons", car:evalQuasiQuote(ast.car, env), cdr: evalQuasiQuote(ast.cdr, env)};
+	      }
+	  } else {
+	      return ast;
+	  }
+      }
+
       //----------------------------------
       // Helper functions for eval & apply
       //----------------------------------
@@ -718,6 +829,8 @@
 	  } else if(expr.type === "macro"){
 	      let body = printExpr(expr.body);
 	      result =  "(macro " + printExpr(expr.args) + " " + body.substr(1,body.length-2) + ")";
+	  } else if (expr.type === "string"){
+	      result =  '"' + expr.value + '"';	      
 	  } else if (expr.value != undefined){
 	      result =  expr.value;
 	  } else {
@@ -765,6 +878,8 @@
       readeval("(define (set-car! a b) (primitive-set-car! a b))",GLOBAL_ENV);
       readeval("(define (set-cdr! a b) (primitive-set-cdr! a b))",GLOBAL_ENV);
       readeval("(define (eval e) (primitive-eval e))",GLOBAL_ENV);
+      readeval("(define (js-eval e) (primitive-js-eval e))",GLOBAL_ENV);
+      readeval('(define (concat &rest) (cond ((equal? () &rest) "") (#t (primitive-concat (car &rest) (apply concat (cdr &rest))))))',GLOBAL_ENV);
       //additional primitives are define, set!, quote, cond, lambda, macro, error
       //see "misc. arithmetic functions" for even more primitives
 
@@ -811,8 +926,13 @@
 	  readeval("(define (* x y) (cond ((equal? y 0) 0) ((< y 1) (* (- 0 x) (- 0 y))) (#t (+ x (* x (- y 1))))))",GLOBAL_ENV);
 	  readeval("(define (modulo x y) (cond ((equal? x y) 0) ((< x y) x) (#t (modulo (- x y) y))))",GLOBAL_ENV);
 	  readeval("(define remainder modulo)",GLOBAL_ENV); //TODO: implement sign differences
-	  readeval("(define (quotient x y) (define (divhelp x y acc) (cond ((equal? y 0) (error quotient -- Division by zero)) ((< y 0) (error quotient -- Only positive values for y are supported)) ((< x y)  acc) " +
-		   "((>= x y) (divhelp (- x y) y (+ acc 1))))) (divhelp x y 0))",GLOBAL_ENV);
+	  readeval("(define (quotient x y)" +
+		   "  (define (divhelp x y acc)" +
+		   "    (cond ((equal? y 0) (error quotient -- Division by zero))" +
+		   "          ((< y 0) (error quotient -- Only positive values for y are supported))" +
+		   "          ((< x y)  acc) " +
+		   "          ((>= x y) (divhelp (- x y) y (+ acc 1)))))" +
+		   "  (divhelp x y 0))",GLOBAL_ENV);
       } else {
 	  readeval("(define (* x y) (primitive-multiply x y))",GLOBAL_ENV);
 	  readeval("(define (modulo x y) (primitive-modulo x y))",GLOBAL_ENV);
@@ -843,12 +963,19 @@
       readeval("(define (append &rest) (cond ((null? &rest) ()) (#t (append-2 (car &rest) (apply append (cdr &rest))))))", GLOBAL_ENV);
       readeval("(define (reverse xs) (define (revappend xs ys) (cond ((null? xs) ys) (#t (revappend (cdr xs) (cons (car xs) ys))))) (revappend xs ()))", GLOBAL_ENV);//Thank you, Guy Steele!
       readeval("(define (member obj l) (cond ((equal? l ()) #f)  (#t (if (equal? (car l) obj) #t (member obj (cdr l))))))", GLOBAL_ENV);
-      
+
+      //IO functions
+      //Normally, I would consider using js-eval (instead of defining new primitives) cheating.
+      //However, the following functions are more about user interface than the language itself,
+      //so it's kind of okay, I guess...
+      readeval("(define (load file) (js-eval (concat \"loadFile('\" file \"')\")))",GLOBAL_ENV);
+      readeval('(define (clear) (js-eval "clrscr();"))',GLOBAL_ENV);
+      readeval("(define (js-alert string) (js-eval (concat \"alert('\" string \"')\")))",GLOBAL_ENV);
 
       //misc. functions
 
       if(FEATURE_STREAMS) {
-	  //Streams and delayed evaluationfrom SICP chapter 3. This
+	  //Streams and delayed evaluation from SICP chapter 3. This
 	  //feature can be turned off by setting FEATURE_STREAMS to
 	  //false. 
 	  readeval("(define cons-stream (macro (a b) (cons a (delay b))))",GLOBAL_ENV);
@@ -922,6 +1049,7 @@
 	  _test("(equal? (cons 1 (+ 1 2)) (cons (+ 0 1) 3))", "#t");
 	  _test("(cond ((equal? 1 2) #f)((equal? 1 1) #t))", "#t");
 	  _test("(((lambda (x) (lambda (y) (+ x y))) 6) 5)", "11");
+	  _test("(let ((x 3) (y 4)) (set! y 5) y)","5")
 	  readeval("(define (times-2 x) (+ x x))",GLOBAL_ENV);
 	  _test("(times-2 3)", "6");
  	  readeval("(define (cadr x) (car (cdr x)))",GLOBAL_ENV);
@@ -969,124 +1097,3 @@
     </script>
   </body>
 </html>
-
-<!--
-Changelog:
-- v0.2:
-  - [!] Changed AST format from Array to cons cells
-  - Filter empty tokens during tokenizing, making later code cleaner
-- v0.3:
-  - [!] New primitives: apply, macro
-  - Changed names of primitives to "primitive-", introduced scheme methods that call those primitives (to enable things like (map + ...) )
-  - js readability: introdusced NIL, _T, _F  as a js contants, introduced makeEnv()
-  - Stream examples from SICP
-  - Introduced _test() to make tests more readable
-  - New tests and examples
-- v0.4:
-  - [!] Introduced trampoline() to enable tail recursion
-  - [!] 'sexp syntax
-  - [!] New primitive: set!
-  - General cleanup, comments, consts as switches for individual features
-  - New tests and examples
-- v0.5:
-  - [!] New primitives: set-car!, set-cdr!, eval
-  - New functions: drop, take, begin, various list functions
-  - UI improvements: Focus input text field on page load, eval code when Enter is pressed
-- v0.6:
-  - New primitives: primitive-{multiply,quotient,modulo}. The old implementation is available via FEATURE_MINIMAL_MATH
-  - Read syntax (without proper behavior!) for quasi-quote(`) and unquote(,).
-  - New primitive primitive-type, new functions: type predicates, removed: primitive-atom
-
-TODO:
-Bugs / Missing features:
-- [X] +, -, < can't be used in higher-order functions. Define + as a function and use primitive-plus as special form?
-  - [X] However, this makes variadic + impossible right now. Implement variadic functions?
-- [X] quote is broken?
-- [X] define <=, >=, and, or, if, ...
-- [ ] real Macros?
-- [X] printExpr doesn't handle lambda yet (fixed to remove () around body)
-- [X] function application mutates a lambda's environment permanently
-- [?] improve UI
-  - [ ] load files
-  - [ ] move scheme code to external .scm file
-- [X] use cons instead of array
-- [X] Tail Call Elimination (BAM, done!!!)
-  - [X] => implement queue of unevaluated lisp expressions, turn js-recursion into loop (DONE, implemented trampolining intead)
-- [X] fix equal? for quote and lambda. and fix it again. fix quote.
-- [X] add (map f l)
-- [X] begin
-- [ ] let
-- [ ] else in cond
-- [X] eq?, primitive division/multiplication
-- [ ] add strings
-  - [ ] refactor parser to consume each character separately. should work without lookahead
-- [ ] add vectors. javascript arrays and a few primitives.
-
-Bonus-features
-- [X] (list ...), 
-- [X] print conses as lists
-- [X] 'quote
-- quasi-quote, unquote, splicing
-- [X] Numbers as functions?
-- js-eval?
-- Strings?
-- macros & definitions from Lisp Micro Manual
-- make memory-management explicit by using a stack of environments? 
-  (bad idea, because new environments could use any existing one as their parent,
-   so this means fullblown garbage-collection)
-- [X] set! to change value in env higher up the chain
-- display, ...
-- change macros to memoize? or let the user explicitly eval parameters 
-  (the latter choice would remove the macro-specific env.__get() code )
-  (what do real FEXPRs do?)
-  (or: kill the current macro system, implement syntax-rules)
-- change environments to proper hash tables (or alists and make them accessible in scheme)
-- define proper object types for each lisp data type
-- define equal? in terms of eq?
-
-/////////////////////////////////////////////////////
-// What's still missing for an R5RS-compliant Scheme?
-/////////////////////////////////////////////////////
-easy, symbolic:
-- type predicates (pair?, list?, boolean?, char?,string?, number?, procedure?, ...)
-- [X] begin (as lambda, environment???)
-- [X] cddadr etc.
-- [X] length, append, reverse, list-tail (aka drop, definition is in r5rs), list-ref
-- memq, memv, member (trivial, once eq-predicate are defined)
-- assq, assv, assoc
-
-easy, numbers:
-- number predicates (exact?, odd?, zero?, ...)
-- [ ] min, max (variadic)
-- [X] abs
-- [X] gcd, lcm
-- floor, ceiling, round, truncate (once reals are implemented)
-- exp, log, sin, ... (once reals are implemented)
-
-probably relatively easy:
-- strings, symbol->string, string-symbol
-- better number types (rationals, reals, complex)
-- [X] set!
-- else in cond
-- and/or variadic
-- case 
-- let, letrec, let*
-- do
-- eqv, eq
-- [X] set-car!, set-cdr!
-- vectors (r4rs section 6.8)
-- eval, apply
-- map variadic, for-each
-
-probably difficult:
-- [X] quote syntax
-- quasiquote, unquote
-- dotted pairs
-- syntax-rules, define-syntax, let-syntax
-- (call/cc)
-- input/output-ports
-- system interface
-
-
-
--->
