@@ -1,7 +1,7 @@
 #+title: der programmbaukasten -- documentation
 
 TL;DR: It's a scheme interpreter. It's incomplete, it's not particularly interesting. I wrote it as a learning experience.
-[[media/Screenshot.png]]
+[[media/screenshot-1.png]]
 
 * License
 GPLv3
