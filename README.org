@@ -1,6 +1,7 @@
 #+title: der programmbaukasten -- documentation
 
 TL;DR: It's a scheme interpreter. It's incomplete, it's not particularly interesting. I wrote it as a learning experience.
+[[media/Screenshot.png]]
 
 * License
 GPLv3
@@ -60,7 +61,7 @@ GPLv3
   - Pass the AST to the functions ~lispeval~ and ~lispapply~ (both via the function ~trampoline~)
     - ~trampoline~ is called in a loop, which replaces tail-recursive calls from eval to apply and vice versa.
     - ~trampoline~ expects a single argument, ~packedArgs~. ~packedArgs[0]~ is supposed to be one of "value", "eval" or "apply". "value" means that ~packedArgs[1]~ can be returned as a result, "eval" and "apply" mean that ~lispeval~ or ~lispapply~ should be called with the arguments in ~packedArgs[1]~, ~packedArgs[2]~, ...
-    - According to this, eval and apply often return results of the form ~["eval", someExpression, someEnvironment]~ or ~["apply", aFunction, anParameterList, anEnvironment, aDebugName]~.
+    - According to this, eval and apply often return results of the form ~["eval", someExpression, someEnvironment]~ or ~["apply", aFunction, aParameterList, anEnvironment, aDebugName]~.
   - Print the result
 - Most things are implemented in a very naive way:
   - Environments are javascript objects mapping symbols to values.
