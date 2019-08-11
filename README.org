@@ -1,14 +1,18 @@
 #+title: der programmbaukasten -- documentation
 
 TL;DR: It's a scheme interpreter. It's incomplete, it's not particularly interesting. I wrote it as a learning experience.
-[[media/screenshot-1.png]]
+
+* Screenshot
+[[media/screenshot-browser.png]]
 
 * License
-GPLv3
+GPLv3 or any later version
 * Installation
 - Open programmbaukasten.html in your favorite standard-compliant web browser.
+- *Alternatively*, you can run programmbaukasten.js in node and run `nodeREPL()`
+  [[media/screenshot-repl-it.png]]
 * Backstory / Dev diary
-- I wrote a hacky Scheme interpreter in one day. I've been planning to do this for a long time. On the first day, I got much further than I expected.
+- I wrote a hacky Scheme interpreter, which I had been planning to do for a long time. On the first day, I got much further than I expected.
 - The interpreter handles basic data and operations. At the current time, progress still comes easy. For a list of limitations, see TODO-List at the end of the source code.
 - After a few days of hacking, the interpreter supports +macros+ (see below) and tail recursion. I want to extend it to an R5RS-compliant version. Alternatively, I might limit myself to the subset of Scheme presented in SICP.
 - The interpreter was originally planned to be minimalistic. As such, it implemented even basic stuff like ~div~, ~mod~ or ~*~ in Scheme. Recursively. I have changed that, although the original implementation can be activated by setting ~FEATURE_MINIMAL_MATH~ to ~true~ in the js source.
@@ -16,7 +20,7 @@ GPLv3
 - I wrote a "macro system" (if you can call it that), mostly to implement ~if~ in terms of ~cond~. "Macros" in this system are like lambdas, except they don't evaluate their arguments until they are used. The arguments will be evaluated in the dynamic environment, all other expressions will be evaluated in the lexical environments. In contrast to FEXPRs it is not possible to access the unevaluated arguments. If an argument is used twice in the macro's body, it will be evaluated twice, mind the side effects! I don't know which macro system I have reinvented, but it makes enough sense that I suppose I'm not the first one to have this idea. The next step towards real macros will be quasiquote. I want to support R5RS compatible macros, but I don't want to slow down to understand those right now.
 * Features
 - Currently, the most complex program that the interpreter can successfully run is an incomplete scheme implementation of "CASTING SPELS IN LISP" (http://www.lisperati.com/casting.html). You can try it +by evaluating (load "examples/spels.scm")+ (this was recently broken by new security rules in Firefox and Chrome; Instead you can copy the file's contents into the REPL by hand). This example will be continuously updated to reflect the current state of my Scheme implementation.
-- *For a list of all functions in the global environment, you can type ~GLOBAL_ENV~ into your browser's developer console*
+- *For a list of all functions in the global environment, you can type "GLOBAL_ENV" (without the quotes) into your browser's developer console*
 - The interpreter currently supports (all features are supposed to work as described in SICP unless stated otherwise):
   - Data types
     - Symbols (the allowed characters are specified by an ugly regexp): ~atom?~
@@ -39,7 +43,7 @@ GPLv3
   - Conditionals: ~if~, ~and~, ~or~, ~not~, ~cond~
   - Streams as defined in SICP chapter 3. Work in progress. Set FEATURE_STREAMS in the js source to false to exclude this. (~cons-stream~, ~delay~, ~force~, ~stream-car~, ~stream-cdr~, ~the-empty-stream~, ~stream-null?~, ~stream-ref~, ~stream-map~, ~stream-for-each~, ~stream-enumerate-interval~, ~stream-filter~, ~integers-starting-from~, ~integers~, ~divisible?~, ~no-sevens~, ~sieve~, ~primes~)
   - The account example from SICP. Set FEATURE_ACCOUNT in the js source to false to exclude this. Check the source code for the implemented functions (Ctrl+F ACCOUNT).
-  - ~quote~ , ~quasi-quote~ aka ~`~, and ~unquote~ aka ~,~
+  - ~quote~ , ~quasi-quote~ aka ~`expr~, and ~unquote~ aka ~,expr~
   - System and host language interaction: ~load~ (currently broken for offline use), ~js-eval~, ~js-alert~
 * Notable Missing Features
 - Proper hygenic macros

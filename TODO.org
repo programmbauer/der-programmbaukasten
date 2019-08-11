@@ -26,7 +26,7 @@
 - v0.7:
   - [!] Temporary support for let. Will be replaced once proper macros are implemented
   - Preliminary support for quasi-quote (`) and unquote (,)
-  - loading files via loadFile() (
+  - loading files via loadFile()
     - [X] TODO: provide a user interface for this
   - [!] Strings
   - new function: js-eval
@@ -69,11 +69,10 @@ Bonus-features
   - [X] unquote 
   - [ ] splicing
 - [X] Numbers as functions?
-- js-eval?
+- [X] js-eval?
 - macros & definitions from Lisp Micro Manual
 - make memory-management explicit by using a stack of environments? 
-  (bad idea, because new environments could use any existing one as their parent,
-   so this means fullblown garbage-collection)
+  (bad idea, because new environments could use any existing one as their parent, so this means fullblown garbage-collection)
 - [X] set! to change value in env higher up the chain
 - display, ...
 - change macros to memoize? or let the user explicitly eval parameters 
