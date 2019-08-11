@@ -31,6 +31,9 @@
   - [!] Strings
   - new function: js-eval
   - new functions: concat, load
+- v0.8:
+  - moved the js code to scripts/programmbaukasten.js
+  - added a minimalistic node.js REPL
 
 * TODO:
 Bugs / Missing features:
