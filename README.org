@@ -51,12 +51,12 @@ GPLv3 or any later version
 - Integers, Rationals
 - Vectors
 - ...
-- see TODO.org
+- see [[./TODO.org]]
 * Implementation Details
 - At its core, this is a /very/ simple interpreter. Any user input is handled the following way:
   - Read the input into a string
   - Surround all parentheses with space characters
-  - Split the string at all space characters (this was inspired by https://maryrosecook.com/blog/post/little-lisp-interpreter )
+  - Split the string at all space characters (this was inspired by https://maryrosecook.com/blog/post/little-lisp-interpreter , but Peter Norvig also used a similar algorithm in http://norvig.com/lispy.html)
   - Take the resulting "token stream" and parse it into an AST. The nodes of this AST are javascript objects, e.g.:
     - ~{type: "number" value: 5}~
     - ~{type: "symbol" value: "hello"}~

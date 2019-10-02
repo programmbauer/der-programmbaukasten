@@ -973,7 +973,7 @@ function testCases() {
     _test("(equal? (quote (a b c)) (quote (a b c)))","#t");
     _test("(equal? (quote (a b c)) (quote (a b)))","#f");
     _test("(equal? (map fib (quote (1 2 3))) (quote (1 1 2)))","#t");//yay, quote works
-    //The Big One. Factorial using the "poor man's y combinator (W. Byrd):
+    //The Big One. Factorial using the "poor man's y combinator" (W. Byrd):
     _test("(((lambda (!) (lambda (n) ((! !) n))) (lambda (!) (lambda (n) (cond ((equal? n 0) 1) (#t (* n ((! !) (- n 1)))))))) 5)","120");
     _test("(map atom? (quote (1 (2 3) hi (bye))))","(list #t #f #t #f)");
     _test("(reduce + (list 1 2 3 4 5) 0)","15");
