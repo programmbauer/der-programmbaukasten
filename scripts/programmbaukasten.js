@@ -438,7 +438,12 @@ function lispeval (ast,env) {
 	    }
 	} else if (ast.car.value === "cond") {
 	    for(let clause of generateCons(ast.cdr)) {
-		let condition = trampoline(["eval",clause.car, env]);
+		let condition = undefined;
+		if(clause.car.type === "symbol" && clause.car.value === "else") {
+		    condition = _T;
+		} else {
+		    condition = trampoline(["eval",clause.car, env]);
+		}
 		if(condition.value != "#f") {
 		    return ["eval",clause.cdr.car,env];
 		    break;
@@ -852,7 +857,7 @@ if(FEATURE_MINIMAL_MATH === true){
 }	  
 readeval("(define (even? x) (= (modulo x 2) 0))",GLOBAL_ENV);
 readeval("(define (odd?  x) (= (modulo x 2) 1))",GLOBAL_ENV);
-readeval("(define (abs x) (cond ((< x 0) (- 0 x)) (#t x)))",GLOBAL_ENV);
+readeval("(define (abs x) (cond ((< x 0) (- 0 x)) (else x)))",GLOBAL_ENV);
 readeval("(define (gcd a b) (if (= b 0) a (gcd b (remainder a b))))",GLOBAL_ENV);
 readeval("(define (lcm a b) (* (abs a) (quotient (abs b) (gcd a b))))",GLOBAL_ENV);
 
@@ -860,20 +865,20 @@ readeval("(define (lcm a b) (* (abs a) (quotient (abs b) (gcd a b))))",GLOBAL_EN
 
 //list functions
 readeval("(define (list &rest) &rest)",GLOBAL_ENV);
-readeval("(define (map f l) (cond ((equal? l ()) ()) (#t (cons (f (car l)) (map f (cdr l))))))", GLOBAL_ENV);
-readeval("(define (reduce f l init) (cond ((equal? l ()) init) (#t (reduce f (cdr l) (f init (car l))))))", GLOBAL_ENV);
+readeval("(define (map f l) (cond ((equal? l ()) ()) (else (cons (f (car l)) (map f (cdr l))))))", GLOBAL_ENV);
+readeval("(define (reduce f l init) (cond ((equal? l ()) init) (else (reduce f (cdr l) (f init (car l))))))", GLOBAL_ENV);
 readeval("(define (filter f l) (cond ((equal? l ()) ()) ((f (car l)) (cons (car l) (filter f (cdr l)))) (#t (filter f (cdr l)))))", GLOBAL_ENV);
-readeval("(define (drop n l) (cond ((equal? l ()) ()) ((= n 0) l) (#t (drop (- n 1) (cdr l)))))", GLOBAL_ENV);
+readeval("(define (drop n l) (cond ((equal? l ()) ()) ((= n 0) l) (else (drop (- n 1) (cdr l)))))", GLOBAL_ENV);
 readeval("(define (list-tail l k) (drop k l))", GLOBAL_ENV);
-readeval("(define (list-ref l k) (cond ((equal? k 0) (car l))  (#t (list-ref (cdr l) (- k 1)))))", GLOBAL_ENV);
+readeval("(define (list-ref l k) (cond ((equal? k 0) (car l))  (else (list-ref (cdr l) (- k 1)))))", GLOBAL_ENV);
 readeval("(define (length l) (cond ((equal? l ()) 0)  (#t (+ 1 (length (cdr l))))))", GLOBAL_ENV);
-readeval("(define (take n l) (cond ((equal? l ()) ()) ((= n 0) ()) (#t (cons (car l) (take (- n 1) (cdr l))))))", GLOBAL_ENV);
+readeval("(define (take n l) (cond ((equal? l ()) ()) ((= n 0) ()) (else (cons (car l) (take (- n 1) (cdr l))))))", GLOBAL_ENV);
 readeval("(define (null? l) (equal? l ()))",GLOBAL_ENV);
 readeval("(define (assoc obj alist) (cond ((equal? alist ()) ()) ((equal? obj (car (car alist))) (car alist)) (#t (assoc obj (cdr alist)))))",GLOBAL_ENV);
-readeval("(define (append-2 l1 l2) (cond ((null? l1) l2) (#t (cons (car l1) (append-2 (cdr l1) l2)))))", GLOBAL_ENV);
-readeval("(define (append &rest) (cond ((null? &rest) ()) (#t (append-2 (car &rest) (apply append (cdr &rest))))))", GLOBAL_ENV);
+readeval("(define (append-2 l1 l2) (cond ((null? l1) l2) (else (cons (car l1) (append-2 (cdr l1) l2)))))", GLOBAL_ENV);
+readeval("(define (append &rest) (cond ((null? &rest) ()) (else (append-2 (car &rest) (apply append (cdr &rest))))))", GLOBAL_ENV);
 readeval("(define (reverse xs) (define (revappend xs ys) (cond ((null? xs) ys) (#t (revappend (cdr xs) (cons (car xs) ys))))) (revappend xs ()))", GLOBAL_ENV);//Thank you, Guy Steele!
-readeval("(define (member obj l) (cond ((equal? l ()) #f)  (#t (if (equal? (car l) obj) #t (member obj (cdr l))))))", GLOBAL_ENV);
+readeval("(define (member obj l) (cond ((equal? l ()) #f)  (else (if (equal? (car l) obj) #t (member obj (cdr l))))))", GLOBAL_ENV);
 
 //IO functions
 //Normally, I would consider using js-eval (instead of defining new primitives) cheating.
@@ -900,7 +905,7 @@ if(FEATURE_STREAMS) {
     //skipped display-stream and display-line for now; need to implement display etc.
     readeval("(define (stream-enumerate-interval low high) (if (> low high) the-empty-stream (cons-stream low (stream-enumerate-interval (+ low 1) high))))",GLOBAL_ENV);
     readeval("(define (stream-filter pred stream) (cond ((stream-null? stream) the-empty-stream) ((pred (stream-car stream)) (cons-stream (stream-car stream)"+
-	     "(stream-filter pred (stream-cdr stream)))) (#t (stream-filter pred (stream-cdr stream)))))",GLOBAL_ENV); //replaced else with #t, //TODO: add else to cond
+	     "(stream-filter pred (stream-cdr stream)))) (else (stream-filter pred (stream-cdr stream)))))",GLOBAL_ENV);
     //TODO: Why does this example fail? (stream-car (stream-cdr (stream-filter even? (stream-enumerate-interval 10000 1000000)))) // ANSWER: Because of the recursion in modulo -.-
     //skipped memo-proc, need to implement set!
     //skipped stuff
@@ -913,12 +918,12 @@ if(FEATURE_STREAMS) {
 }
 
 if(FEATURE_ACCOUNT) {
-    //changed eq? to equal, else to #t, crippeld the error message due to missing backquote support. I should import this again once these features are added.
+    //changed eq? to equal, crippeld the error message due to missing backquote support. I should import this again once these features are added.
     readeval("(define (make-account balance)"+
 	     "  (define (withdraw amount) (if (>= balance amount) (begin (set! balance (- balance amount)) balance) 'Insufficient-funds))"+
 	     "  (define (deposit amount) (set! balance (+ balance amount)) balance)"+
 	     "  (define (dispatch m) (cond ((equal? m 'withdraw) withdraw) ((equal? m 'deposit) deposit) "+
-	     "    (#t (error Unknown request -- MAKE-ACCOUNT))))  dispatch)",GLOBAL_ENV);
+	     "    (else (error Unknown request -- MAKE-ACCOUNT))))  dispatch)",GLOBAL_ENV);
 }
 
 //------------------------
@@ -984,7 +989,6 @@ function testCases() {
     _test("(map atom? (quote (1 (2 3) hi (bye))))","(list #t #f #t #f)");
     _test("(reduce + (list 1 2 3 4 5) 0)","15");
     _test("(if #t 1 (quotient 1 0))","1"); //this would produce an error without macros
-    _test("(((make-account 100) 'withdraw) 50)","50");
     _test("((lambda () (define x (cons 1 ())) (set-cdr! x x) (take 20 x)))","'(1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1)"); //test set-cdr and circular list structures
 
     if(FEATURE_INFIX === true) {
@@ -993,7 +997,10 @@ function testCases() {
     } else {
 	console.log("   // FEATURE_INFIX is not active, skipping FEATURE_INFIX tests");
     }
-    
+
+    if(FEATURE_ACCOUNT === true) {
+	_test("(((make-account 100) 'withdraw) 50)","50");
+    }
     
     if(FEATURE_MINIMAL_MATH === true) {
 	console.log("   // FEATURE_MINIMAL_MATH is active, skipping problematic tests");
