@@ -62,6 +62,7 @@ Bugs / Missing features:
   - [LOLNOPE] refactor parser to consume each character separately. should work without lookahead
 - [ ] add vectors. javascript arrays and a few primitives.
 - [X] Whitespace in strings is sometimes replaced by a single " ". (fixed, should have used a <pre> for the output)
+- [ ] in the current implementation "__parent" and "__get" store interpreter state in scheme environments. This leads to bugs if the programmer tries to name variables like this. Change the environment to something like ~{bindings: <...>, parent: <...>}, __get should probably be a function. Remove the olad "macro" system before making these changes.
 
 Bonus-features
 - [X] (list ...), 

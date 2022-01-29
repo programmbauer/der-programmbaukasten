@@ -190,26 +190,116 @@ function nthCons(cons, n) {
 // Set Helper methods
 //-------------------
 
-function setEqual(as, bs) {
-    return (as.size === bs.size) && isSuperset(as,bs);
-}
-
 function isSuperset(set, subset) {
-    for (let elem of subset) {
-        if (!set.has(elem)) {
+    for (let element of subset) {
+        if (!set.has(element)) {
             return false;
         }
     }
     return true;
 }
 
+function setEqual(as, bs) {
+    return (as.size === bs.size) && isSuperset(as,bs);
+}
+
+function setAdd(set, element) {
+    //side-effect-free version of Set.add()
+    let result = new Set(set);
+    result.add(element);
+    return result;
+}
+
+function setRemove(set,element) {
+    let result = new Set();
+    for (let elt of set) {
+	if (elt !== element) {
+	    result.add(elt);
+	}
+    }
+    return result;
+}
+
+function setFlip(set, element) {
+    if (set.has(element)) {
+	return setRemove(set, element);
+    } else {
+	return setAdd(set,element);
+    }
+}
+    
+
 //---------------
 // Syntax objects
 //---------------
 
+//This implements syntax objects as defined in
+//"Let's Build a Hygienic Macro Expander" by Matthew Flatt
+//available at: https://www.youtube.com/watch?v=Or_yKiI3Ha4
+
 //syntax objects have the form
-//{type:"syntax",expr: <some s-expression>,
-//scopes: <a javascript Set of scopes>}
+// {type:"syntax",
+//  expr: <some s-expression>,
+//  scopes: <a javascript Set of scopes>}
+
+//syntax? is <syntax-objext>.type === "syntax"
+//syntax-e is <syntax-object>.expr
+//syntax-scopes is <syntax-object>.scopes
+
+//all-bindings ???
+
+function isIdentifier(syntaxObject) {
+    return syntaxObject.type === "syntax";
+}
+
+function datumToSyntax(ast) {
+    if (ast.type === "syntax") {
+	return ast;
+    } else if (ast.type === "symbol") {
+	return {type: "syntax", expr: ast, scopes: new Set()};
+    } else if (ast.type === "cons") {
+	return {type: "cons",
+		car: datumToSyntax(ast.car),
+		cdr: datumToSyntax(ast.cdr)};
+    } else {
+	return ast;
+    }
+}
+
+function syntaxToDatum(ast) {
+    if(ast.type === "syntax") {
+	return ast.expr;
+    } else if (ast.type === "cons") {
+	return {type:"cons",
+		car: datumToSyntax(ast.car),
+		cdr: datumToSyntax(ast.cdr)};
+    } else {
+	return ast;
+    }
+}
+
+function adjustScope(ast, scope, operation) {
+    if(ast.type === "syntax") {
+	return {type: "syntax",
+		expr: ast.expr,
+		scopes: operation(ast.scopes)};
+    } else if (ast.type === "cons") {
+	return {type:"cons",
+		car: adjustScope(ast.car, scope),
+		cdr: adjustScope(ast.cdr, scope)};
+    } else {
+	return ast;
+    }
+}
+
+function addScope(ast,scopes){
+    return ajustScopes(ast,scopes,setAdd);
+}
+
+function flipScope(ast,scopes){
+    return ajustScopes(ast,scopes,setFlip);
+}
+
 
 //-------------
 // Eval & Apply
@@ -906,7 +996,6 @@ if(FEATURE_STREAMS) {
     readeval("(define (stream-enumerate-interval low high) (if (> low high) the-empty-stream (cons-stream low (stream-enumerate-interval (+ low 1) high))))",GLOBAL_ENV);
     readeval("(define (stream-filter pred stream) (cond ((stream-null? stream) the-empty-stream) ((pred (stream-car stream)) (cons-stream (stream-car stream)"+
 	     "(stream-filter pred (stream-cdr stream)))) (else (stream-filter pred (stream-cdr stream)))))",GLOBAL_ENV);
-    //TODO: Why does this example fail? (stream-car (stream-cdr (stream-filter even? (stream-enumerate-interval 10000 1000000)))) // ANSWER: Because of the recursion in modulo -.-
     //skipped memo-proc, need to implement set!
     //skipped stuff
     readeval("(define (integers-starting-from n) (cons-stream n (integers-starting-from (+ n 1))))",GLOBAL_ENV);
@@ -992,7 +1081,15 @@ function testCases() {
     _test("((lambda () (define x (cons 1 ())) (set-cdr! x x) (take 20 x)))","'(1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1)"); //test set-cdr and circular list structures
 
     if(FEATURE_INFIX === true) {
-	readeval("(define (fib n) (define a 0) (define b 1) (while (n > 0) (define help b) (set! b (a + b)) (set! a help) (set! n (n - 1))) a)",GLOBAL_ENV);
+	readeval("(define (fib n)"+
+		 "  (define a 0)"+
+		 "  (define b 1)"+
+		 "  (while (n > 0)"+
+		 "    (define help b)"+
+		 "    (set! b (a + b))"+
+		 "    (set! a help)"+ 
+		 "    (set! n (n - 1)))"+
+		 "  a)",GLOBAL_ENV);
 	_test("(map fib '(0 1 2 3 4 5 6 7 8 9))","'(0 1 1 2 3 5 8 13 21 34)"); //imperative fibonnaci, relies on infix feature
     } else {
 	console.log("   // FEATURE_INFIX is not active, skipping FEATURE_INFIX tests");
