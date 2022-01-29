@@ -191,9 +191,15 @@ function nthCons(cons, n) {
 //-------------------
 
 function setEqual(as, bs) {
-    //Check if two javascript Set objects are equal
-    if (as.size !== bs.size) return false;
-    for (let a of as) if (!bs.has(a)) return false;
+    return (as.size === bs.size) && isSuperset(as,bs);
+}
+
+function isSuperset(set, subset) {
+    for (let elem of subset) {
+        if (!set.has(elem)) {
+            return false;
+        }
+    }
     return true;
 }
 
@@ -978,25 +984,34 @@ function testCases() {
     _test("(map atom? (quote (1 (2 3) hi (bye))))","(list #t #f #t #f)");
     _test("(reduce + (list 1 2 3 4 5) 0)","15");
     _test("(if #t 1 (quotient 1 0))","1"); //this would produce an error without macros
-    _test("(stream-ref no-sevens 100)","117");
     _test("(((make-account 100) 'withdraw) 50)","50");
     _test("((lambda () (define x (cons 1 ())) (set-cdr! x x) (take 20 x)))","'(1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1)"); //test set-cdr and circular list structures
+
     if(FEATURE_INFIX === true) {
 	readeval("(define (fib n) (define a 0) (define b 1) (while (n > 0) (define help b) (set! b (a + b)) (set! a help) (set! n (n - 1))) a)",GLOBAL_ENV);
 	_test("(map fib '(0 1 2 3 4 5 6 7 8 9))","'(0 1 1 2 3 5 8 13 21 34)"); //imperative fibonnaci, relies on infix feature
     } else {
-	console.log("   // skipped FEATURE_INFIX tests");
+	console.log("   // FEATURE_INFIX is not active, skipping FEATURE_INFIX tests");
     }
     
     
-    //-----------------------------
-    //Longer-running tests below!!!
-    //-----------------------------
-    //(only a problem with FEATURE_MINIMAL_MATH === true)
-    _test("(stream-ref primes 50)","233");
-    //test tail recursion
-    _test("(stream-car (stream-cdr (stream-filter even? (stream-enumerate-interval 10000 1000000))))","10002");
-    _test("(quotient 100000 2)","50000");
+    if(FEATURE_MINIMAL_MATH === true) {
+	console.log("   // FEATURE_MINIMAL_MATH is active, skipping problematic tests");
+    } else {
+	_test("(quotient 100000 2)","50000");
+    }
+
+    if (FEATURE_STREAMS === true && FEATURE_MINIMAL_MATH === false) {
+	//stream tests include deep recursion, only test when FEATURE_MINIMAL_MATH is inactive
+	_test("(stream-ref primes 50)","233");
+	_test("(stream-ref no-sevens 100)","117");
+	//stress tests tail recursion
+	_test("(stream-car (stream-cdr (stream-filter even? (stream-enumerate-interval 10000 1000000))))","10002");
+    } else {
+	console.log("   // FEATURE_STREAMS is not active (or FEATURE_MINIMAL_MATH active), skipping FEATURE_INFIX tests");
+    }
+
+    
 }
 
 //--------------------------
